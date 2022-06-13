@@ -1,0 +1,26 @@
+[component]
+JID=j2j.linuxoid.in
+Host=192.168.220.250
+Port=5555
+Password=superpassword
+
+[database]
+Host=192.168.220.252
+Type=mysql
+User=root
+Name=j2j
+Password=superpassword
+Prefix=j2j_
+
+[admins]
+List=rain@linuxoid.in
+
+[debug]
+logfile=/tmp/j2j.log
+registrations=yes
+logins=yes
+
+xml_logging=/var/log/j2j/xml.log
+component_xml=no
+clients_xml=no
+clients_jids_to_log=All ;or user1@server,user2@server
