@@ -1,22 +1,28 @@
 [component]
-JID=j2j.linuxoid.in
-Host=192.168.220.250
-Port=5555
-Password=superpassword
+JID=j2j.localhost
+Host=localhost
+Port=8883
+Password=secret
+Send_probes=True
+
+[process]
+Pid=/var/run/j2jt/j2jt.pid ; pid file
 
 [database]
-Host=192.168.220.252
-Type=mysql
-User=root
+Host=localhost
+Type=postgres ;or mysql
+User=j2j
 Name=j2j
-Password=superpassword
+Password=db_secret
 Prefix=j2j_
+mysql_ping_period=2 ; ping period for mysql in hours. 0 for none
 
 [admins]
-List=rain@linuxoid.in
+List=admin1@foo.org,admin2@example.net,admin3@some.net
+Registrations_notify=False
 
 [debug]
-logfile=/tmp/j2j.log
+logfile=/var/log/j2j/j2j.log
 registrations=yes
 logins=yes
 

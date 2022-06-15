@@ -1,9 +1,4 @@
-CREATE TABLE j2j_rosters (
-    num bigint NOT NULL AUTO_INCREMENT,
-    id integer,
-    jid varchar(255),
-    PRIMARY KEY(num)
-);
+-- schema revision 1
 
 CREATE TABLE j2j_users (
     id bigint NOT NULL AUTO_INCREMENT,
@@ -13,15 +8,23 @@ CREATE TABLE j2j_users (
     server varchar(255),
     `password` varchar(255),
     port integer,
+    import_roster boolean DEFAULT false,
+    remove_from_guest_roster boolean DEFAULT false,
     primary key(id)
 );
 
+CREATE TABLE j2j_rosters (
+    user_id integer,
+    jid varchar(255)
+);
+
 CREATE TABLE j2j_users_options (
-    id integer,
+    user_id integer,
     replytext varchar(255),
     lightnotify boolean DEFAULT false,
     autoreplybutforward boolean DEFAULT false,
     onlyroster boolean DEFAULT false,
     autoreplyenabled boolean DEFAULT false,
-    primary key(id)
+    disablenotifies boolean DEFAULT false,
+    primary key(user_id)
 );
