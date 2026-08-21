@@ -17,6 +17,7 @@ from slixmpp.xmlstream.matcher import StanzaPath
 import utils
 import database
 import debug
+import i18n
 from client import GuestClient
 from adhoc import AdHoc
 
@@ -50,6 +51,21 @@ class J2JComponent(ComponentXMPP):
             Callback('J2JMessage', StanzaPath('message'), self.onMessage))
         self.register_handler(
             Callback('J2JIq', StanzaPath('iq'), self.onIq))
+
+    # ---- i18n ----
+
+    def effectiveLang(self, stored):
+        """Map a stored per-user language (possibly None) onto a
+        supported code, falling back to the transport default."""
+        if stored:
+            return i18n.normalize(stored)
+        return self.config.DEFAULT_LANGUAGE
+
+    def getUserLang(self, bare_jid):
+        uid = self.db.getIdByJid(bare_jid)
+        if uid:
+            return self.effectiveLang(self.db.getLangById(uid))
+        return self.config.DEFAULT_LANGUAGE
 
     def componentConnected(self, event=None):
         self.shuttingDown = False
@@ -251,9 +267,11 @@ class J2JComponent(ComponentXMPP):
                     "User %s has conflict login:\n%s" %
                     (fro.full, utils.tostring(el.xml)))
                 return
-            self.send_presence(ptype="unavailable", pto=fro.full,
-                               pfrom=self.cJid,
-                               pstatus="Logging in...")
+            self.send_presence(
+                ptype="unavailable", pto=fro.full, pfrom=self.cJid,
+                pstatus=i18n.t(
+                    self.effectiveLang(self.db.getLangById(uid)),
+                    "status_logging_in"))
             self.clients[fro.full] = GuestClient(
                 uid, el, self, fro, clientJid, data[3], data[1],
                 data[4], data[5], data[6])
@@ -419,6 +437,7 @@ class J2JComponent(ComponentXMPP):
         iq = self._newResultIq(fro, ID)
         query = utils.addsub(iq, "query", "jabber:iq:register")
         uid = self.db.getIdByJid(fro.bare)
+        lang = self.getUserLang(fro.bare)
         if uid:
             edit = True
             data = self.db.getDataById(uid)
@@ -427,27 +446,34 @@ class J2JComponent(ComponentXMPP):
             edit = False
             data = [None, None, None, None, 5222, False, False]
         form = utils.createForm(query, "form")
-        utils.addTitle(form, "J2J Registration Form")
+        utils.addTitle(form, i18n.t(lang, "reg_title"))
         if not edit:
             utils.addLabel(
-                form,
-                "Please enter data for your Jabber-account")
+                form, i18n.t(lang, "reg_new_instructions"))
         else:
-            utils.addLabel(form, "Please edit data")
-        utils.addTextBox(form, "username", "Username", data[0],
-                         required=True)
-        utils.addTextPrivate(form, "password", "Password", data[1],
-                             required=True)
-        utils.addTextBox(form, "server", "Server", data[2],
-                         required=True)
-        utils.addTextBox(form, "domain", "Domain or IP", data[3])
-        utils.addTextBox(form, "port", "Port", str(data[4]))
+            utils.addLabel(form, i18n.t(lang, "reg_edit_instructions"))
+        jid_value = None
+        if edit and data[0] and data[2]:
+            jid_value = data[0] + "@" + data[2]
+        utils.addTextBox(form, "jid", i18n.t(lang, "field_jid"),
+                         jid_value, required=True)
+        utils.addTextPrivate(form, "password",
+                             i18n.t(lang, "field_password"),
+                             data[1], required=True)
+        utils.addTextBox(form, "domain", i18n.t(lang, "field_domain"),
+                         data[3])
+        utils.addTextBox(form, "port", i18n.t(lang, "field_port"),
+                         str(data[4]))
         if not uid:
             utils.addCheckBox(form, "import_roster",
-                              "Import roster", data[5])
+                              i18n.t(lang, "field_import_roster"),
+                              data[5])
         utils.addCheckBox(form, "remove_from_roster",
-                          "Remove contacts from guest roster "
-                          "automatically", data[6])
+                          i18n.t(lang, "field_remove_from_roster"),
+                          data[6])
+        utils.addListSingle(form, "language",
+                            i18n.t(lang, "field_language"),
+                            lang, i18n.options())
         self.send(utils.tostring(iq))
 
     def setRegister(self, el, fro, ID):
@@ -502,18 +528,18 @@ class J2JComponent(ComponentXMPP):
             self.debug.registrationsLog(
                 "Client %s is unregistered" % fro.full)
             return
-        username = utils.xdataValue(el, 'username')
-        if username == '':
-            self.sendError(el, etype="modify",
-                           condition="not-acceptable")
+        jid_str = (utils.xdataValue(el, 'jid') or '').strip()
+        if jid_str.count('@') < 1:
+            self.sendError(el, etype="modify", condition="jid-malformed")
+            return
+        username, server = jid_str.split('@', 1)
+        try:
+            JID(username + '@' + server)
+        except InvalidJID:
+            self.sendError(el, etype="modify", condition="jid-malformed")
             return
         password = utils.xdataValue(el, 'password')
         if password == '':
-            self.sendError(el, etype="modify",
-                           condition="not-acceptable")
-            return
-        server = utils.xdataValue(el, 'server')
-        if server == '':
             self.sendError(el, etype="modify",
                            condition="not-acceptable")
             return
@@ -529,6 +555,9 @@ class J2JComponent(ComponentXMPP):
             utils.xdataValue(el, 'import_roster'))
         remove_from_roster = utils.strToBool(
             utils.xdataValue(el, 'remove_from_roster'))
+        lang_submitted = (utils.xdataValue(el, 'language') or '').strip()
+        language = i18n.normalize(lang_submitted) if lang_submitted \
+            else None
         if not edit:
             self.db.execute(
                 "INSERT INTO users "
@@ -539,7 +568,8 @@ class J2JComponent(ComponentXMPP):
                  port, int(import_roster), int(remove_from_roster)))
             uid = self.db.getIdByJid(fro.bare)
             self.db.execute(
-                "INSERT INTO users_options (user_id) VALUES (?)", (str(uid),))
+                "INSERT INTO users_options (user_id,language) "
+                "VALUES (?,?)", (str(uid), language))
             self.db.commit()
             self.sendIqResult(fro.full, self.cJid, ID,
                               "jabber:iq:register")
@@ -580,6 +610,10 @@ class J2JComponent(ComponentXMPP):
                 "WHERE id=?",
                 (username, domain, server, password, port,
                  int(remove_from_roster), str(uid)))
+            # Only touch the stored language when the form actually
+            # carried the field (older cached forms may omit it).
+            if lang_submitted:
+                self.db.setLangById(uid, language)
             self.db.commit()
             self.sendIqResult(fro.full, self.cJid, ID,
                               "jabber:iq:register")
@@ -588,12 +622,13 @@ class J2JComponent(ComponentXMPP):
                 "to %s" % (fro.full, username + "@" + server))
 
     def getIqGateway(self, fro, ID):
+        lang = self.getUserLang(fro.bare)
         iq = self._newResultIq(fro, ID)
         query = utils.addsub(iq, "query", "jabber:iq:gateway")
         utils.addsub(query, "desc", "jabber:iq:gateway",
-                     text="Enter XMPP name below")
+                     text=i18n.t(lang, "gw_desc"))
         utils.addsub(query, "prompt", "jabber:iq:gateway",
-                     text="XMPP name")
+                     text=i18n.t(lang, "gw_prompt"))
         self.send(utils.tostring(iq))
 
     def setIqGateway(self, el, fro, ID):
@@ -629,6 +664,7 @@ class J2JComponent(ComponentXMPP):
         self.send(utils.tostring(iq))
 
     def getDiscoInfo(self, el, fro, ID, node):
+        lang = self.getUserLang(fro.bare)
         iq = self._newResultIq(fro, ID)
         query = utils.addsub(iq, "query", utils.DISCO_INFO_NS)
         if node:
@@ -636,7 +672,7 @@ class J2JComponent(ComponentXMPP):
             if node == 'http://jabber.org/protocol/commands':
                 identity = utils.addsub(query, "identity",
                                         utils.DISCO_INFO_NS)
-                identity.set("name", "Commands")
+                identity.set("name", i18n.t(lang, "disco_commands"))
                 identity.set("category", "automation")
                 identity.set("type", "command-list")
             if node in self.adhoc.commands:
@@ -648,7 +684,8 @@ class J2JComponent(ComponentXMPP):
                         return
                 identity = utils.addsub(query, "identity",
                                         utils.DISCO_INFO_NS)
-                identity.set("name", self.adhoc.commands[node][0])
+                identity.set(
+                    "name", i18n.t(lang, self.adhoc.commands[node][0]))
                 identity.set("category", "automation")
                 identity.set("type", "command-node")
                 utils.addsub(query, "feature", utils.DISCO_INFO_NS,
@@ -690,28 +727,32 @@ class J2JComponent(ComponentXMPP):
         self.send(utils.tostring(iq))
 
     def getDiscoItems(self, el, fro, ID, node):
+        lang = self.getUserLang(fro.bare)
         iq = self._newResultIq(fro, ID)
         query = utils.addsub(iq, "query", utils.DISCO_ITEMS_NS)
         if node:
             query.set("node", node)
         if node is None:
             if fro.bare in self.config.ADMINS:
-                utils.addDiscoItem(query, self.cJid, "Users",
+                utils.addDiscoItem(query, self.cJid,
+                                   i18n.t(lang, "disco_users"),
                                    'users')
             if fro.full in self.clients:
                 utils.addDiscoItem(
                     query, self.quoteJID(
                         self.clients[fro.full].client_jid.host),
-                    "Guest's server Discovery")
-                utils.addDiscoItem(query, self.cJid,
-                                   "Guest roster", "groster")
+                    i18n.t(lang, "disco_guest_server"))
+                utils.addDiscoItem(
+                    query, self.cJid,
+                    i18n.t(lang, "disco_guest_roster"), "groster")
         elif node == "groster" and fro.full in self.clients:
             groups = self.clients[fro.full].guest_roster.getGroups()
             for group in groups:
                 utils.addDiscoItem(query, self.cJid, group,
                                    "groster/" + group)
         elif node == "users" and fro.bare in self.config.ADMINS:
-            utils.addDiscoItem(query, self.cJid, "Online users",
+            utils.addDiscoItem(query, self.cJid,
+                               i18n.t(lang, "disco_online_users"),
                                'users/online')
         elif node == "users/online" and \
                 fro.bare in self.config.ADMINS:
@@ -724,7 +765,7 @@ class J2JComponent(ComponentXMPP):
                 utils.addDiscoItem(query, self.quoteJID(contact[0]),
                                    contact[1])
         elif node == "http://jabber.org/protocol/commands":
-            self.adhoc.getCommandsList(query)
+            self.adhoc.getCommandsList(query, lang)
         elif node in self.adhoc.commands:
             if self.adhoc.commands[node][3]:
                 uid = self.db.getIdByJid(fro.bare)

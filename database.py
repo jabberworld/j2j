@@ -50,10 +50,18 @@ class Database:
             " replytext TEXT,"
             " autoreplybutforward INTEGER DEFAULT 0,"
             " onlyroster INTEGER DEFAULT 0,"
-            " autoreplyenabled INTEGER DEFAULT 0)")
+            " autoreplyenabled INTEGER DEFAULT 0,"
+            " language TEXT)")
         self.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_options_user_id "
             "ON users_options (user_id)")
+        # Migration for databases created before the language column
+        # existed (CREATE TABLE IF NOT EXISTS does not alter old files).
+        cols = [row[1] for row in
+                self.fetchall("PRAGMA table_info(users_options)")]
+        if 'language' not in cols:
+            self.execute(
+                "ALTER TABLE users_options ADD COLUMN language TEXT")
         self.commit()
 
     def execute(self, query, params=()):
@@ -96,8 +104,21 @@ class Database:
     def getOptsById(self, uid):
         data = self.fetchone(
             'SELECT replytext,autoreplybutforward,'
-            'onlyroster,autoreplyenabled FROM '
+            'onlyroster,autoreplyenabled,language FROM '
             'users_options WHERE user_id=?', (uid,))
         if data[0] is None:
             data[0] = ''
         return data
+
+    def getLangById(self, uid):
+        row = self.fetchone(
+            'SELECT language FROM users_options WHERE user_id=?',
+            (uid,))
+        if row is None:
+            return None
+        return row[0]
+
+    def setLangById(self, uid, lang):
+        self.execute(
+            'UPDATE users_options SET language=? WHERE user_id=?',
+            (lang, str(uid)))

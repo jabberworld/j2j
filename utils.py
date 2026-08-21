@@ -197,6 +197,23 @@ def addMemo(form, name, caption, value):
         valueEl.text = line
     return memo
 
+def addListSingle(form, name, caption, value, options):
+    """Single-choice dropdown field. *options* is an iterable of
+    (value, label) pairs; *value* is the preselected entry."""
+    field = ET.SubElement(form, X_DATA + 'field')
+    field.set('type', 'list-single')
+    field.set('var', name)
+    field.set('label', caption)
+    valueEl = ET.SubElement(field, X_DATA + 'value')
+    if value is not None:
+        valueEl.text = str(value)
+    for optValue, optLabel in options:
+        option = ET.SubElement(field, X_DATA + 'option')
+        option.set('label', str(optLabel))
+        v = ET.SubElement(option, X_DATA + 'value')
+        v.text = str(optValue)
+    return field
+
 def tostring(xml, xmlns=None):
     """Serialize an ElementTree element to a Unicode string. Namespaces
     are taken from (Clark) tag names and declared on the root, inherited

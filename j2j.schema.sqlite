@@ -26,7 +26,8 @@ CREATE TABLE users_options (
     replytext TEXT,
     autoreplybutforward INTEGER DEFAULT 0,
     onlyroster INTEGER DEFAULT 0,
-    autoreplyenabled INTEGER DEFAULT 0
+    autoreplyenabled INTEGER DEFAULT 0,
+    language TEXT
 );
 
 CREATE INDEX idx_users_options_user_id ON users_options (user_id);

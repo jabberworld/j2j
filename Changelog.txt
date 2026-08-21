@@ -1,4 +1,10 @@
 J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
+2.0.1:
+	[add] Localized interface (en/ru/uk): registration form, ad-hoc commands, gateway prompts, login status, disco names
+	[add] "Language" selection in the registration form and in the ad-hoc "Options" command; stored per user
+	[add] [general] default_language config option for the transport-wide default language
+	[imp] Registration form: "Username" and "Server" fields merged into a single "Jabber ID" field
+
 1.2.10:
 	[add] Roster import by sending subscribe-presence and settings for it in jabber:iq:register form
 	[add] Command-line option -b for daemonize j2j

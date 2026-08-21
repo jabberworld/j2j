@@ -6,6 +6,8 @@
 import configparser
 import os
 
+import i18n
+
 def config_decorator(func):
     def wrapper(section, option, default=None, required=False):
         try:
@@ -27,6 +29,14 @@ class Config:
 
         get = config_decorator(config.get)
         getboolean = config_decorator(config.getboolean)
+
+        raw_lang = get("general", "default_language",
+                       default=i18n.DEFAULT).strip()
+        self.DEFAULT_LANGUAGE = i18n.normalize(raw_lang)
+        if self.DEFAULT_LANGUAGE != raw_lang.lower().split('-', 1)[0]:
+            raise ValueError(
+                "Invalid [general] default_language %r: must be one "
+                "of %s" % (raw_lang, ", ".join(i18n.LANGUAGES)))
 
         self.JID = get("component", "JID", required=True)
         self.HOST = get("component", "Host", required=True)

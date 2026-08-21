@@ -5,16 +5,20 @@
 
 import time
 
+import i18n
 import utils
 
 class AdHoc:
     def __init__(self, component):
+        # The first element of each entry is an i18n string key,
+        # resolved against the requester's language at render time.
         self.commands = {
-            "stat": ["Statistics", self.getStat, None, False],
-            "options": ["Options", self.getOpts, self.setOpts, True],
+            "stat": ["cmd_stat", self.getStat, None, False],
+            "options": ["cmd_options", self.getOpts, self.setOpts,
+                        True],
             "replicate_vCard":
-                ["Replicate host's vCard to guest's account",
-                 self.getReplica, self.setReplica, True]}
+                ["cmd_replicate_vcard", self.getReplica,
+                 self.setReplica, True]}
         self.sid = 0
         self.vCardSids = {}
 
@@ -28,11 +32,12 @@ class AdHoc:
         self.sid += 1
         return ret
 
-    def getCommandsList(self, query):
+    def getCommandsList(self, query, lang):
         for commandNode in self.commands:
             utils.addDiscoItem(query,
                                self.component.cJid,
-                               self.commands[commandNode][0],
+                               i18n.t(lang,
+                                      self.commands[commandNode][0]),
                                commandNode)
 
     def onCommand(self, el, fro, ID, node):
@@ -71,36 +76,37 @@ class AdHoc:
         return "cancel", "bad-request"
 
     def getReplica(self, iq, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
         if fro.full not in self.component.clients:
             command = utils.createCommand(iq, "stat", "completed",
                                           self.getSid())
             form = utils.createForm(command, "result")
-            utils.addTitle(form, "Execution error")
-            utils.addLabel(form, "Please log in first.")
+            utils.addTitle(form, i18n.t(lang, "replica_err_title"))
+            utils.addLabel(form, i18n.t(lang, "replica_need_login"))
             self.component.send(utils.tostring(iq))
             return
         command = utils.createCommand(iq, "replicate_vCard",
                                       "executing", self.getSid())
         form = utils.createForm(command, "form")
-        utils.addTitle(form, "vCard replication")
-        utils.addLabel(
-            form,
-            "Are you sure want to replicate your host's vCard to "
-            "your guest's account?")
-        utils.addCheckBox(form, "commit_cb", "Yes, do it", False)
+        utils.addTitle(form, i18n.t(lang, "replica_title"))
+        utils.addLabel(form, i18n.t(lang, "replica_confirm"))
+        utils.addCheckBox(form, "commit_cb",
+                          i18n.t(lang, "replica_yes"), False)
         self.component.send(utils.tostring(iq))
 
     def setReplica(self, el, iq, sid, fro, ID):
         uid = self.component.db.getIdByJid(fro.bare)
         if not uid:
             return
+        lang = self.component.getUserLang(fro.bare)
         committed = utils.xdataValue(el, 'commit_cb')
         if committed == "0" or fro.full not in self.component.clients:
             command = utils.createCommand(iq, "replicate_vCard",
                                           "completed", sid)
             form = utils.createForm(command, "result")
-            utils.addTitle(form, "Execution canceled")
-            utils.addLabel(form, "Replication cancelled")
+            utils.addTitle(form,
+                           i18n.t(lang, "replica_cancel_title"))
+            utils.addLabel(form, i18n.t(lang, "replica_cancelled"))
             self.component.send(utils.tostring(iq))
             return
         vex = utils.addsub(None, "iq", utils.COMPONENT_NS)
@@ -113,16 +119,21 @@ class AdHoc:
         self.vCardSids[sid] = (fro, ID)
 
     def getStat(self, iq, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
         command = utils.createCommand(iq, "stat", "completed",
                                       self.getSid())
         form = utils.createForm(command, "result")
-        utils.addTitle(form, "J2J Statistics")
-        utils.addLabel(form, "J2J Statistics")
-        utils.addLabel(form, "Online Users: " +
-                       str(len(self.component.clients)))
-        utils.addLabel(form, "Total Users: " +
-                       str(self.component.db.getCount("users")))
-        utils.addLabel(form, "Version: " + self.component.VERSION)
+        utils.addTitle(form, i18n.t(lang, "stat_title"))
+        utils.addLabel(form, i18n.t(lang, "stat_title"))
+        utils.addLabel(form,
+                       i18n.t(lang, "stat_online_users") %
+                       len(self.component.clients))
+        utils.addLabel(form,
+                       i18n.t(lang, "stat_total_users") %
+                       self.component.db.getCount("users"))
+        utils.addLabel(form,
+                       i18n.t(lang, "stat_version") %
+                       self.component.VERSION)
         upInSecs = int(time.time() - self.component.startTime)
         upInDays = int(upInSecs / (3600 * 24))
         upInHours = int((upInSecs - upInDays * 3600 * 24) / 3600)
@@ -130,9 +141,9 @@ class AdHoc:
                            upInHours * 3600) / 60)
         upInSecs = int(upInSecs - upInDays * 3600 * 24 -
                        upInHours * 3600 - upInMinutes * 60)
-        utils.addLabel(form, "Uptime: %d days %d hours %d minutes "
-                             "%d seconds" % (upInDays, upInHours,
-                                             upInMinutes, upInSecs))
+        utils.addLabel(form,
+                       i18n.t(lang, "stat_uptime") %
+                       (upInDays, upInHours, upInMinutes, upInSecs))
         self.component.send(utils.tostring(iq))
 
     def getOpts(self, iq, fro, ID):
@@ -140,21 +151,25 @@ class AdHoc:
         if not uid:
             return
         opts = self.component.db.getOptsById(uid)
+        lang = self.component.effectiveLang(opts[4])
         command = utils.createCommand(iq, "options", "executing",
                                       self.getSid())
         form = utils.createForm(command, "form")
-        utils.addTitle(form, "J2J Options and Settings")
+        utils.addTitle(form, i18n.t(lang, "opts_title"))
         utils.addCheckBox(form, "onlyRoster",
-                          "Receive messages only from contacts from "
-                          "Guest roster", opts[2])
-        utils.addLabel(form, "Auto Reply Settings")
+                          i18n.t(lang, "opts_only_roster"), opts[2])
+        utils.addLabel(form, i18n.t(lang, "opts_autoreply_header"))
         utils.addCheckBox(form, "autoReplyEnabled",
-                          "Enable Auto Reply for ALL guest contacts",
+                          i18n.t(lang, "opts_autoreply_enabled"),
                           opts[3])
         utils.addCheckBox(form, "autoReplyButForward",
-                          "Always forward messages to me", opts[1])
+                          i18n.t(lang, "opts_autoreply_forward"),
+                          opts[1])
         utils.addMemo(form, "replyText",
-                      "Text for Auto Reply (1000 chars max)", opts[0])
+                      i18n.t(lang, "opts_reply_text"), opts[0])
+        utils.addListSingle(form, "language",
+                            i18n.t(lang, "field_language"),
+                            lang, i18n.options())
         self.component.send(utils.tostring(iq))
 
     def setOpts(self, el, iq, sid, fro, ID):
@@ -162,6 +177,7 @@ class AdHoc:
         if not uid:
             return
         opts = self.component.db.getOptsById(uid)
+        lang = self.component.effectiveLang(opts[4])
         command = utils.createCommand(iq, "options", "completed", sid)
         onlyRoster = utils.xdataValue(el, 'onlyRoster')
         if onlyRoster:
@@ -177,12 +193,18 @@ class AdHoc:
             rT = "\n".join(replyText)
             rT = rT[:1000]
             opts[0] = rT
+        # Only touch the stored language when the form actually
+        # carried the field (older cached forms may omit it).
+        lang_submitted = (utils.xdataValue(el, 'language') or '').strip()
+        if lang_submitted:
+            opts[4] = i18n.normalize(lang_submitted)
         self.component.db.execute(
             "UPDATE users_options SET onlyroster=?,"
-            "autoreplyenabled=?,autoreplybutforward=?,replytext=? "
-            "WHERE user_id=?",
+            "autoreplyenabled=?,autoreplybutforward=?,replytext=?,"
+            "language=? WHERE user_id=?",
             (int(opts[2]), int(opts[3]), int(opts[1]), opts[0],
-             str(uid)))
+             opts[4], str(uid)))
         self.component.db.commit()
-        utils.createNote(command, "info", "Options were updated")
+        utils.createNote(command, "info",
+                         i18n.t(lang, "note_options_updated"))
         self.component.send(utils.tostring(iq))
