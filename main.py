@@ -34,11 +34,6 @@ def daemonize():
 
 
 def main():
-    __all__ = ['j2j', 'client', 'database', 'roster',
-               'utils', 'adhoc', 'debug', 'config']
-    revision = 0
-    date = 0
-
     parser = argparse.ArgumentParser(
         prog='j2j',
         description='Jabber-To-Jabber component')
@@ -50,41 +45,7 @@ def main():
                         action="store_true")
     options = parser.parse_args()
 
-    try:
-        modRev = int(__id__.split(" ")[2])
-        modDate = int(__id__.split(" ")[3].replace("-", ""))
-    except (ValueError, IndexError):
-        modRev = 0
-        modDate = 0
-
-    if modRev > revision:
-        revision = modRev
-    if modDate > date:
-        date = modDate
-
-    for modName in __all__:
-        module = __import__(modName, globals(), locals())
-        try:
-            modRev = int(module.__id__.split(" ")[2])
-            modDate = int(module.__id__.split(" ")[3].replace("-", ""))
-        except (AttributeError, ValueError, IndexError):
-            modRev = 0
-            modDate = 0
-        if modRev > revision:
-            revision = modRev
-        if modDate > date:
-            date = modDate
-
-    if revision == 0:
-        revision = ''
-    else:
-        revision = '.r' + str(revision)
-    if date != 0:
-        date = str(date)
-        revision = revision + " %s-%s-%s" % (date[:4], date[4:6],
-                                             date[6:8])
-
-    version = "1.2.10" + revision
+    version = "2.0.0"
 
     if options.configFile:
         config = Config(options.configFile)

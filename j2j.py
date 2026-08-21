@@ -5,8 +5,10 @@
 
 import copy
 import hashlib
+import platform
 import time
 
+import slixmpp
 from slixmpp import ComponentXMPP
 from slixmpp.jid import InvalidJID, JID
 from slixmpp.xmlstream.handler import Callback
@@ -407,14 +409,13 @@ class J2JComponent(ComponentXMPP):
     def getvcard(self, fro, ID):
         iq = self._newResultIq(fro, ID)
         vcard = utils.addsub(iq, "vCard", utils.VCARD_NS)
-        utils.addsub(vcard, "NICKNAME", utils.VCARD_NS, text="J2J")
+        utils.addsub(vcard, "NICKNAME", utils.VCARD_NS,
+                     text="J2J: Jabber-To-Jabber Transport")
+        utils.addsub(vcard, "BDAY", utils.VCARD_NS, text="2026-08-21")
         utils.addsub(vcard, "DESC", utils.VCARD_NS,
-                     text="Jabber-To-Jabber Transport (GTalk, "
-                          "LiveJournal inside)\n"
-                          "Description: "
-                          "http://wiki.JRuDevels.org/index.php/J2J")
+                     text="Jabber-To-Jabber Transport")
         utils.addsub(vcard, "URL", utils.VCARD_NS,
-                     text="http://JRuDevels.org")
+                     text="https://jabberworld.info")
         self.send(utils.tostring(iq))
 
     def getRegister(self, el, fro, ID):
@@ -428,7 +429,7 @@ class J2JComponent(ComponentXMPP):
         else:
             edit = False
             data = [None, None, None, None, 5222, False, False]
-        form = utils.createForm(iq, "form")
+        form = utils.createForm(query, "form")
         utils.addTitle(form, "J2J Registration Form")
         if not edit:
             utils.addLabel(
@@ -621,10 +622,13 @@ class J2JComponent(ComponentXMPP):
         iq = self._newResultIq(fro, ID)
         query = utils.addsub(iq, "query", "jabber:iq:version")
         utils.addsub(query, "name", "jabber:iq:version",
-                     text="J2J Transport (http://JRuDevels.org) "
-                          "slixmpp-version")
+                     text="J2J: Jabber-To-Jabber Transport")
         utils.addsub(query, "version", "jabber:iq:version",
                      text=self.VERSION)
+        utils.addsub(query, "os", "jabber:iq:version",
+                     text="Python %s, slixmpp %s" % (
+                         platform.python_version(),
+                         slixmpp.__version__))
         self.send(utils.tostring(iq))
 
     def getDiscoInfo(self, el, fro, ID, node):
@@ -665,7 +669,7 @@ class J2JComponent(ComponentXMPP):
         else:
             identity = utils.addsub(query, "identity",
                                     utils.DISCO_INFO_NS)
-            identity.set("name", "J2J: XMPP-Transport")
+            identity.set("name", "J2J: Jabber-To-Jabber Transport")
             identity.set("category", "gateway")
             identity.set("type", "XMPP")
             utils.addsub(query, "feature", utils.DISCO_INFO_NS,
@@ -694,9 +698,6 @@ class J2JComponent(ComponentXMPP):
         if node:
             query.set("node", node)
         if node is None:
-            utils.addDiscoItem(query, self.cJid, "Commands",
-                               'http://jabber.org/protocol/commands')
-            self.adhoc.getCommandsList(query)
             if fro.bare in self.config.ADMINS:
                 utils.addDiscoItem(query, self.cJid, "Users",
                                    'users')
