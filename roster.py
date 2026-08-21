@@ -40,7 +40,8 @@ class Roster:
 
     def updateFromClientRoster(self):
         items = {}
-        for jid, item in self.host.client_roster.items():
+        for jid in self.host.client_roster.keys():
+            item = self.host.client_roster[jid]
             contact = str(jid)
             items[contact] = [item['name'], item['subscription'],
                               list(item['groups'])]

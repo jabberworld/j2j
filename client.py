@@ -282,7 +282,9 @@ class GuestClient(ClientXMPP):
 
     def route(self, el):
         fro = el['from']
-        if not fro:
+        # NB: slixmpp returns an empty JID object (truthy!) when the
+        # attribute is absent, so check the string value instead.
+        if not fro or not fro.full:
             return
         to = el['to']
         try:
