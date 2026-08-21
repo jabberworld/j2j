@@ -57,6 +57,13 @@ class GuestClient(ClientXMPP):
         self.auto_authorize = None
         self.auto_subscribe = False
 
+        # Legacy C2S ports serve plaintext/STARTTLS only: skip the
+        # direct-TLS handshake attempt (it aborts the whole attempt
+        # loop via our onConnectFailed handler) and allow plain text
+        # as a last resort.
+        self.enable_direct_tls = False
+        self.enable_plaintext = True
+
         self.add_event_handler('session_start', self.onSessionStart)
         self.add_event_handler('presence', self.onPresence)
         self.add_event_handler('roster_update', self.onRosterResult)
