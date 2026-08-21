@@ -1,26 +1,49 @@
+# J2J transport configuration template.
+# Copy to j2j.conf / ~/.j2j/j2j.conf / /etc/j2j/j2j.conf and adjust.
+
 [component]
+
+; JID of the transport service itself (as registered on the server)
 JID=j2j.localhost
+; Address of the XMPP server running the component listener
 Host=localhost
+; Component connection port (XEP-0114, jabber:component:accept)
 Port=8883
+; Shared secret used to authenticate the component
 Password=secret
+; Send probes to registered users on startup to restore their sessions
 Send_probes=True
 
 [process]
-Pid=/var/run/j2jt/j2jt.pid ; pid file
+
+; File to write the transport PID to; omit to skip PID tracking
+Pid=/var/run/j2jt/j2jt.pid
 
 [database]
-Name=/var/lib/j2j/j2j.db ; sqlite3 database file
+
+; Path to the SQLite database file
+Name=/var/lib/j2j/j2j.db
 
 [admins]
+
+; Comma-separated list of administrator JIDs
 List=admin1@foo.org,admin2@example.net,admin3@some.net
+; Notify admins about new registrations
 Registrations_notify=False
 
 [debug]
-logfile=/var/log/j2j/j2j.log
-registrations=yes
-logins=yes
 
-xml_logging=/var/log/j2j/xml.log
+; Optional section. Without "logfile" everything is logged to console.
+; logfile=/var/log/j2j/j2j.log
+; Minimum severity: debug / info / warning / error / critical (default info)
+loglevel=info
+; Log registration events
+registrations=yes
+; Log guest login/logout events
+logins=yes
+; Raw stanza dumps of the component stream (logged at DEBUG level)
 component_xml=no
+; Raw stanza dumps of guest client streams (logged at DEBUG level)
 clients_xml=no
+; Which users' client streams to dump: All, or comma-separated JIDs
 clients_jids_to_log=All ;or user1@server,user2@server

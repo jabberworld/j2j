@@ -41,17 +41,20 @@ class Config:
         self.DEBUG_REGISTRATIONS = getboolean("debug", "registrations",
                                               default=False)
         self.DEBUG_LOGINS = getboolean("debug", "logins", default=False)
-        self.LOGFILE = None
-        if self.DEBUG_REGISTRATIONS or self.DEBUG_LOGINS:
-            self.LOGFILE = get("debug", "logfile", required=True)
+        # No logfile -> log to console (stderr).
+        self.LOGFILE = get("debug", "logfile")
+
+        levels = ("debug", "info", "warning", "error", "critical")
+        self.LOGLEVEL = get("debug", "loglevel", default="info").lower()
+        if self.LOGLEVEL not in levels:
+            raise ValueError(
+                "Invalid [debug] loglevel %r: must be one of %s" %
+                (self.LOGLEVEL, ", ".join(levels)))
 
         self.DEBUG_COMPXML = getboolean("debug", "component_xml",
                                         default=False)
         self.DEBUG_CLXML = getboolean("debug", "clients_xml", default=False)
         self.DEBUG_CLXMLACL = get("debug", "clients_jids_to_log", default='')
-        self.DEBUG_XMLLOG = None
-        if self.DEBUG_COMPXML or self.DEBUG_CLXML:
-            self.DEBUG_XMLLOG = get("debug", "xml_logging", required=True)
 
         admins = get("admins", "List", default="")
         self.ADMINS = admins.split(",")

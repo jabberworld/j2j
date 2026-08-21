@@ -37,10 +37,10 @@ class J2JComponent(ComponentXMPP):
             config.LOGFILE,
             config.DEBUG_REGISTRATIONS,
             config.DEBUG_LOGINS,
-            config.DEBUG_XMLLOG,
             config.DEBUG_COMPXML,
             config.DEBUG_CLXML,
-            config.DEBUG_CLXMLACL)
+            config.DEBUG_CLXMLACL,
+            config.LOGLEVEL)
         self.db = database.Database(config)
 
         self.add_event_handler('session_start', self.componentConnected)
@@ -59,7 +59,8 @@ class J2JComponent(ComponentXMPP):
         if self.config.SEND_PROBES:
             for jid, in jids:
                 self.send_presence(ptype='probe', pto=jid, pfrom=self.cJid)
-        print("Connected")
+        self.debug.logger.info("Connected to server, service available at %s",
+                               self.cJid)
 
     # ---- XML debug logging ----
 
@@ -246,11 +247,10 @@ class J2JComponent(ComponentXMPP):
             js.append(hashlib.md5(fro.bare.encode('utf-8')).hexdigest())
             if newmd5 in js:
                 self.sendError(el, "cancel", "conflict")
-                self.debug.loginsLog(
+                self.debug.loginConflictLog(
                     "User %s has conflict login:\n%s" %
                     (fro.full, utils.tostring(el.xml)))
                 return
-
             self.send_presence(ptype="unavailable", pto=fro.full,
                                pfrom=self.cJid,
                                pstatus="Logging in...")

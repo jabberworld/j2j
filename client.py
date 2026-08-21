@@ -137,7 +137,7 @@ class GuestClient(ClientXMPP):
                                                  self.ping)
 
     def onConnectFailed(self, event):
-        self.component.debug.loginsLog(
+        self.component.debug.loginErrorLog(
             "User %s has error in connection:\n%s" %
             (self.host_jid.full, str(event)))
         self.cancel_connection_attempt()
