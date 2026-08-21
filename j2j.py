@@ -33,6 +33,7 @@ class J2JComponent(ComponentXMPP):
         self.cJid = str(cJid)
         self.clients = {}
         self.shuttingDown = False
+        self.restartRequested = False
         self.startTime = 0
         self.debug = debug.Debug(
             config.LOGFILE,
@@ -70,11 +71,10 @@ class J2JComponent(ComponentXMPP):
     def componentConnected(self, event=None):
         self.shuttingDown = False
         self.startTime = time.time()
-        jids = self.db.fetchall(
-            'SELECT jid FROM users')
         if self.config.SEND_PROBES:
-            for jid, in jids:
-                self.send_presence(ptype='probe', pto=jid, pfrom=self.cJid)
+            for jid in self.db.activeUserJids():
+                self.send_presence(ptype='probe', pto=jid,
+                                   pfrom=self.cJid)
         self.debug.logger.info("Connected to server, service available at %s",
                                self.cJid)
 
@@ -215,6 +215,20 @@ class J2JComponent(ComponentXMPP):
         uid = self.db.getIdByJid(fro.bare)
         if not uid:
             return
+        if presenceType in ("available", "", None) and \
+           self.db.isDisabled(uid):
+            # Suspended account: refuse guest login but tell the user
+            # how to get back in (ad-hoc Options works without one).
+            lang = self.effectiveLang(self.db.getLangById(uid))
+            self.debug.loginsLog(
+                "User %s is trying to log in while suspended" %
+                (fro.full))
+            self.sendError(el, etype="cancel", condition="not-allowed")
+            msg = self.make_message(mto=fro.bare, mfrom=self.cJid,
+                                    mtype="chat")
+            msg['body'] = i18n.t(lang, "msg_suspended")
+            msg.send()
+            return
         data = self.db.getDataById(uid)
         resource = fro.resource
         if resource:
@@ -297,6 +311,15 @@ class J2JComponent(ComponentXMPP):
     def deleteClient(self, jid):
         if jid.full in self.clients:
             del self.clients[jid.full]
+
+    def disconnectGuestSessions(self, bare_jid):
+        """Drop every active guest session of *bare_jid* (used when an
+        account gets suspended)."""
+        for jid in list(self.clients.keys()):
+            if jid == bare_jid or jid.startswith(bare_jid + "/"):
+                cl = self.clients[jid]
+                if cl.connected:
+                    cl.disconnect()
 
     # ---- iq routing ----
 
@@ -433,19 +456,20 @@ class J2JComponent(ComponentXMPP):
                      text="https://jabberworld.info")
         self.send(utils.tostring(iq))
 
-    def getRegister(self, el, fro, ID):
-        iq = self._newResultIq(fro, ID)
-        query = utils.addsub(iq, "query", "jabber:iq:register")
+    def registerContext(self, fro):
+        """(uid, data) describing the requester's registration state;
+        *data* carries defaults for a fresh registration when uid is
+        None."""
         uid = self.db.getIdByJid(fro.bare)
-        lang = self.getUserLang(fro.bare)
         if uid:
-            edit = True
-            data = self.db.getDataById(uid)
-            utils.addsub(query, "registered", "jabber:iq:register")
-        else:
-            edit = False
-            data = [None, None, None, None, 5222, False, False]
-        form = utils.createForm(query, "form")
+            return uid, self.db.getDataById(uid)
+        return None, [None, None, None, None, 5222, False, False]
+
+    def buildRegisterForm(self, parent, lang, uid, data):
+        """Attach the jabber:x:data registration dialog to *parent*
+        (either an iq:register <query/> or an ad-hoc <command/>)."""
+        edit = uid is not None
+        form = utils.createForm(parent, "form")
         utils.addTitle(form, i18n.t(lang, "reg_title"))
         if not edit:
             utils.addLabel(
@@ -464,7 +488,7 @@ class J2JComponent(ComponentXMPP):
                          data[3])
         utils.addTextBox(form, "port", i18n.t(lang, "field_port"),
                          str(data[4]))
-        if not uid:
+        if not edit:
             utils.addCheckBox(form, "import_roster",
                               i18n.t(lang, "field_import_roster"),
                               data[5])
@@ -474,11 +498,114 @@ class J2JComponent(ComponentXMPP):
         utils.addListSingle(form, "language",
                             i18n.t(lang, "field_language"),
                             lang, i18n.options())
+        return form
+
+    def getRegister(self, el, fro, ID):
+        iq = self._newResultIq(fro, ID)
+        query = utils.addsub(iq, "query", "jabber:iq:register")
+        uid, data = self.registerContext(fro)
+        lang = self.getUserLang(fro.bare)
+        if uid is not None:
+            utils.addsub(query, "registered", "jabber:iq:register")
+        self.buildRegisterForm(query, lang, uid, data)
         self.send(utils.tostring(iq))
+
+    def submitRegistration(self, el, fro):
+        """Validate and apply a submitted registration x:data form
+        (shared by jabber:iq:register and the ad-hoc "register"
+        command). Returns (ok, error_condition, created); on success
+        all side effects (DB writes, presences, notifications) have
+        been performed."""
+        jid_str = (utils.xdataValue(el, 'jid') or '').strip()
+        if jid_str.count('@') < 1:
+            return False, "jid-malformed", False
+        username, server = jid_str.split('@', 1)
+        try:
+            JID(username + '@' + server)
+        except InvalidJID:
+            return False, "jid-malformed", False
+        password = utils.xdataValue(el, 'password')
+        if password == '':
+            return False, "not-acceptable", False
+        domain = utils.xdataValue(el, 'domain')
+        if not domain:
+            domain = server
+        port = utils.xdataValue(el, 'port')
+        try:
+            port = int(port)
+        except (ValueError, TypeError):
+            port = 5222
+        import_roster = utils.strToBool(
+            utils.xdataValue(el, 'import_roster'))
+        remove_from_roster = utils.strToBool(
+            utils.xdataValue(el, 'remove_from_roster'))
+        lang_submitted = (utils.xdataValue(el, 'language') or '').strip()
+        language = i18n.normalize(lang_submitted) if lang_submitted \
+            else None
+        uid = self.db.getIdByJid(fro.bare)
+        edit = uid is not None
+        if not edit:
+            self.db.execute(
+                "INSERT INTO users "
+                "(jid,username,domain,server,password,port,"
+                "import_roster,remove_from_guest_roster) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (fro.bare, username, domain, server, password,
+                 port, int(import_roster), int(remove_from_roster)))
+            uid = self.db.getIdByJid(fro.bare)
+            self.db.execute(
+                "INSERT INTO users_options (user_id,language) "
+                "VALUES (?,?)", (str(uid), language))
+            self.db.commit()
+            pres = self.make_presence(ptype="subscribe",
+                                      pto=fro.bare, pfrom=self.cJid)
+            pres.send()
+            if self.config.ADMINS and \
+               self.config.REGISTRATION_NOTIFY:
+                msg = self.make_message(
+                    mto=self.cJid, mtype="chat", mfrom=self.cJid)
+                msg['body'] = "J2J %s Registration notify:\n" \
+                              "Host JID:%s\nGuest JID:%s" % (
+                                  self.cJid, fro.full,
+                                  username + "@" + server)
+                for ajid in self.config.ADMINS:
+                    msg['to'] = ajid
+                    msg.send()
+            self.debug.registrationsLog(
+                "User %s is registered to guest-jid %s" %
+                (fro.full, username + "@" + server))
+            return True, None, True
+        data = self.db.getDataById(uid)
+        if data[0] != username or data[2] != server:
+            a = self.db.fetchall(
+                "SELECT jid FROM rosters WHERE user_id=?", (str(uid),))
+            for unjid, in a:
+                pres = self.make_presence(ptype="unsubscribe",
+                                          pto=fro.bare,
+                                          pfrom=self.quoteJID(unjid))
+                pres.send()
+                pres['type'] = 'unsubscribed'
+                pres.send()
+            self.db.execute(
+                "DELETE FROM rosters WHERE user_id=?", (str(uid),))
+        self.db.execute(
+            "UPDATE users SET username=?,domain=?,server=?,"
+            "password=?,port=?,remove_from_guest_roster=? "
+            "WHERE id=?",
+            (username, domain, server, password, port,
+             int(remove_from_roster), str(uid)))
+        # Only touch the stored language when the form actually
+        # carried the field (older cached forms may omit it).
+        if lang_submitted:
+            self.db.setLangById(uid, language)
+        self.db.commit()
+        self.debug.registrationsLog(
+            "User %s has changed registration information "
+            "to %s" % (fro.full, username + "@" + server))
+        return True, None, False
 
     def setRegister(self, el, fro, ID):
         uid = self.db.getIdByJid(fro.bare)
-        edit = uid is not None
         remove = False
         for q in list(el.xml):
             if utils.locname(q) == 'query':
@@ -486,7 +613,7 @@ class J2JComponent(ComponentXMPP):
                     if utils.locname(child) == 'remove':
                         remove = True
         if remove:
-            if not edit:
+            if uid is None:
                 self.sendError(el, etype="auth",
                                condition="registration-required")
                 return
@@ -528,98 +655,12 @@ class J2JComponent(ComponentXMPP):
             self.debug.registrationsLog(
                 "Client %s is unregistered" % fro.full)
             return
-        jid_str = (utils.xdataValue(el, 'jid') or '').strip()
-        if jid_str.count('@') < 1:
-            self.sendError(el, etype="modify", condition="jid-malformed")
+        ok, err, _created = self.submitRegistration(el, fro)
+        if not ok:
+            self.sendError(el, etype="modify", condition=err)
             return
-        username, server = jid_str.split('@', 1)
-        try:
-            JID(username + '@' + server)
-        except InvalidJID:
-            self.sendError(el, etype="modify", condition="jid-malformed")
-            return
-        password = utils.xdataValue(el, 'password')
-        if password == '':
-            self.sendError(el, etype="modify",
-                           condition="not-acceptable")
-            return
-        domain = utils.xdataValue(el, 'domain')
-        if not domain:
-            domain = server
-        port = utils.xdataValue(el, 'port')
-        try:
-            port = int(port)
-        except (ValueError, TypeError):
-            port = 5222
-        import_roster = utils.strToBool(
-            utils.xdataValue(el, 'import_roster'))
-        remove_from_roster = utils.strToBool(
-            utils.xdataValue(el, 'remove_from_roster'))
-        lang_submitted = (utils.xdataValue(el, 'language') or '').strip()
-        language = i18n.normalize(lang_submitted) if lang_submitted \
-            else None
-        if not edit:
-            self.db.execute(
-                "INSERT INTO users "
-                "(jid,username,domain,server,password,port,"
-                "import_roster,remove_from_guest_roster) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (fro.bare, username, domain, server, password,
-                 port, int(import_roster), int(remove_from_roster)))
-            uid = self.db.getIdByJid(fro.bare)
-            self.db.execute(
-                "INSERT INTO users_options (user_id,language) "
-                "VALUES (?,?)", (str(uid), language))
-            self.db.commit()
-            self.sendIqResult(fro.full, self.cJid, ID,
-                              "jabber:iq:register")
-            pres = self.make_presence(ptype="subscribe",
-                                      pto=fro.bare, pfrom=self.cJid)
-            pres.send()
-            if self.config.ADMINS and \
-               self.config.REGISTRATION_NOTIFY:
-                msg = self.make_message(
-                    mto=self.cJid, mtype="chat", mfrom=self.cJid)
-                msg['body'] = "J2J %s Registration notify:\n" \
-                              "Host JID:%s\nGuest JID:%s" % (
-                                  self.cJid, fro.full,
-                                  username + "@" + server)
-                for ajid in self.config.ADMINS:
-                    msg['to'] = ajid
-                    msg.send()
-            self.debug.registrationsLog(
-                "User %s is registered to guest-jid %s" %
-                (fro.full, username + "@" + server))
-        elif edit:
-            data = self.db.getDataById(uid)
-            if data[0] != username or data[2] != server:
-                a = self.db.fetchall(
-                    "SELECT jid FROM rosters WHERE user_id=?", (str(uid),))
-                for unjid, in a:
-                    pres = self.make_presence(ptype="unsubscribe",
-                                              pto=fro.bare,
-                                              pfrom=self.quoteJID(unjid))
-                    pres.send()
-                    pres['type'] = 'unsubscribed'
-                    pres.send()
-                self.db.execute(
-                    "DELETE FROM rosters WHERE user_id=?", (str(uid),))
-            self.db.execute(
-                "UPDATE users SET username=?,domain=?,server=?,"
-                "password=?,port=?,remove_from_guest_roster=? "
-                "WHERE id=?",
-                (username, domain, server, password, port,
-                 int(remove_from_roster), str(uid)))
-            # Only touch the stored language when the form actually
-            # carried the field (older cached forms may omit it).
-            if lang_submitted:
-                self.db.setLangById(uid, language)
-            self.db.commit()
-            self.sendIqResult(fro.full, self.cJid, ID,
-                              "jabber:iq:register")
-            self.debug.registrationsLog(
-                "User %s has changed registration information "
-                "to %s" % (fro.full, username + "@" + server))
+        self.sendIqResult(fro.full, self.cJid, ID,
+                          "jabber:iq:register")
 
     def getIqGateway(self, fro, ID):
         lang = self.getUserLang(fro.bare)
@@ -676,6 +717,11 @@ class J2JComponent(ComponentXMPP):
                 identity.set("category", "automation")
                 identity.set("type", "command-list")
             if node in self.adhoc.commands:
+                if self.adhoc.commands[node][4] and \
+                   fro.bare not in self.config.ADMINS:
+                    self.sendError(el, etype="auth",
+                                   condition="not-authorized")
+                    return
                 if self.adhoc.commands[node][3]:
                     uid = self.db.getIdByJid(fro.bare)
                     if not uid:
@@ -765,8 +811,13 @@ class J2JComponent(ComponentXMPP):
                 utils.addDiscoItem(query, self.quoteJID(contact[0]),
                                    contact[1])
         elif node == "http://jabber.org/protocol/commands":
-            self.adhoc.getCommandsList(query, lang)
+            self.adhoc.getCommandsList(query, lang, fro)
         elif node in self.adhoc.commands:
+            if self.adhoc.commands[node][4] and \
+               fro.bare not in self.config.ADMINS:
+                self.sendError(el, etype="auth",
+                               condition="not-authorized")
+                return
             if self.adhoc.commands[node][3]:
                 uid = self.db.getIdByJid(fro.bare)
                 if not uid:
@@ -808,6 +859,14 @@ class J2JComponent(ComponentXMPP):
             'SELECT jid FROM users')
         for jid, in jids:
             self.send_presence(ptype='probe', pto=jid, pfrom=self.cJid)
+
+    def requestShutdown(self, restart=False):
+        """Runtime shutdown (ad-hoc admin command); optionally re-exec
+        the whole process afterwards to restart the transport."""
+        self.restartRequested = restart
+        self.debug.logger.info("%s requested via ad-hoc command",
+                               "Restart" if restart else "Stop")
+        self.shutdownHandler()
 
     def shutdownHandler(self, signum=None, frame=None):
         if self.shuttingDown:

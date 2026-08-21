@@ -1,4 +1,14 @@
 J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
+2.0.2:
+	[add] Ad-hoc "Administration" command for admins: set default language (persisted to the config file), restart/stop service, announcement broadcast to registered users
+	[add] Users can suspend and re-enable their own account via the ad-hoc "Options" command; suspended accounts cannot log in
+	[add] Pidfile is removed on graceful shutdown
+	[add] Registration is now also available as the ad-hoc "register" command; iq:register and ad-hoc share one implementation
+	[imp] Ad-hoc commands list is filtered per requester: administration hidden from non-admins, commands needing registration hidden from unregistered users
+	[imp] Direct requests to hidden ad-hoc commands by unauthorized users are answered with proper error stanzas (not-authorized / registration-required) instead of silence
+	[fix] Admin JID list parsing strips whitespace
+	[fix] Boolean form fields: missing or 'false' values are no longer treated as True (previously a missing "confirm" checkbox executed admin actions)
+
 2.0.1:
 	[add] Localized interface (en/ru/uk): registration form, ad-hoc commands, gateway prompts, login status, disco names
 	[add] "Language" selection in the registration form and in the ad-hoc "Options" command; stored per user

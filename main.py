@@ -41,7 +41,7 @@ def main():
                         action="store_true")
     options = parser.parse_args()
 
-    version = "2.0.1"
+    version = "2.0.2"
 
     if options.configFile:
         config = Config(options.configFile)
@@ -64,6 +64,18 @@ def main():
         except NotImplementedError:
             signal.signal(sig, c.shutdownHandler)
     loop.run_forever()
+
+    # Runtime restart (ad-hoc admin command): replace the process
+    # image in place; PID and pidfile stay valid.
+    if getattr(c, "restartRequested", False):
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    # Regular exit: clean up the pidfile.
+    if config.PROCESS_PID and os.path.exists(config.PROCESS_PID):
+        try:
+            os.unlink(config.PROCESS_PID)
+        except OSError:
+            pass
 
 if __name__ == "__main__":
     main()

@@ -92,9 +92,12 @@ def unquoteJID(qjid, cJid):
     return ujid
 
 def strToBool(string):
-    if string == "0":
+    """Parse an x:data boolean value ('1'/'0', 'true'/'false').
+    Missing or empty values are treated as False."""
+    if string is None:
         return False
-    return True
+    return str(string).strip().lower() not in \
+        ("", "0", "false", "no", "off")
 
 def locname(el):
     """Return the local (namespace stripped) name of an XML element."""
@@ -162,6 +165,16 @@ def addCheckBox(form, name, caption, value):
     valueEl = ET.SubElement(checkBox, X_DATA + 'value')
     valueEl.text = '1' if value else '0'
     return checkBox
+
+def addHidden(form, name, value):
+    """Invisible field used to carry state between multi-stage
+    command forms."""
+    field = ET.SubElement(form, X_DATA + 'field')
+    field.set('type', 'hidden')
+    field.set('var', name)
+    valueEl = ET.SubElement(field, X_DATA + 'value')
+    valueEl.text = str(value)
+    return field
 
 def addTextBox(form, name, caption, value, required=False):
     textBox = ET.SubElement(form, X_DATA + 'field')

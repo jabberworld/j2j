@@ -9,16 +9,24 @@ import i18n
 import utils
 
 class AdHoc:
+    # Menu entries of the administration command, in display order.
+    ADMIN_ACTIONS = ("setlang", "restart", "stop", "announce")
+
     def __init__(self, component):
-        # The first element of each entry is an i18n string key,
+        # Each entry: [i18n key, stage-1 handler, stage-2 handler,
+        # hidden_for_unregistered, admin_only]. The i18n key is
         # resolved against the requester's language at render time.
         self.commands = {
-            "stat": ["cmd_stat", self.getStat, None, False],
+            "register": ["cmd_register", self.getRegisterAdhoc,
+                         self.setRegisterAdhoc, False, False],
+            "stat": ["cmd_stat", self.getStat, None, False, False],
             "options": ["cmd_options", self.getOpts, self.setOpts,
-                        True],
+                        True, False],
             "replicate_vCard":
                 ["cmd_replicate_vcard", self.getReplica,
-                 self.setReplica, True]}
+                 self.setReplica, True, False],
+            "admin": ["cmd_admin", self.getAdmin, self.setAdmin,
+                      False, True]}
         self.sid = 0
         self.vCardSids = {}
 
@@ -32,12 +40,23 @@ class AdHoc:
         self.sid += 1
         return ret
 
-    def getCommandsList(self, query, lang):
+    def getCommandsList(self, query, lang, fro):
+        """Populate a disco#items query with the commands visible to
+        this requester: administration only for admins, everything
+        else also for unregistered users except commands that cannot
+        do anything without a registered account."""
+        registered = \
+            self.component.db.getIdByJid(fro.bare) is not None
+        is_admin = fro.bare in self.config.ADMINS
         for commandNode in self.commands:
+            cmd = self.commands[commandNode]
+            if cmd[4] and not is_admin:
+                continue
+            if cmd[3] and not registered:
+                continue
             utils.addDiscoItem(query,
                                self.component.cJid,
-                               i18n.t(lang,
-                                      self.commands[commandNode][0]),
+                               i18n.t(lang, cmd[0]),
                                commandNode)
 
     def onCommand(self, el, fro, ID, node):
@@ -52,6 +71,14 @@ class AdHoc:
         action = command_child.get('action') or 'execute'
         if node not in self.commands:
             return "cancel", "item-not-found"
+        if self.commands[node][4] and \
+           fro.bare not in self.config.ADMINS:
+            return "cancel", "not-authorized"
+        if self.commands[node][3] and \
+           self.component.db.getIdByJid(fro.bare) is None:
+            # Commands hidden from the disco list are also refused
+            # when addressed directly by an unregistered user.
+            return "cancel", "registration-required"
 
         iq = utils.addsub(None, "iq", utils.COMPONENT_NS)
         iq.set("to", fro.full)
@@ -74,6 +101,34 @@ class AdHoc:
             return None, None
 
         return "cancel", "bad-request"
+
+    # ---- registration ----
+
+    def getRegisterAdhoc(self, iq, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
+        uid, data = self.component.registerContext(fro)
+        command = utils.createCommand(iq, "register", "executing",
+                                      self.getSid())
+        self.component.buildRegisterForm(command, lang, uid, data)
+        self.component.send(utils.tostring(iq))
+
+    def setRegisterAdhoc(self, el, iq, sid, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
+        ok, _err, created = self.component.submitRegistration(el, fro)
+        command = utils.createCommand(iq, "register", "completed", sid)
+        form = utils.createForm(command, "result")
+        utils.addTitle(form, i18n.t(lang, "reg_title"))
+        if ok:
+            utils.addLabel(form, i18n.t(
+                lang,
+                "note_register_done" if created
+                else "note_register_updated"))
+        else:
+            utils.addLabel(form,
+                           i18n.t(lang, "reg_error_invalid_data"))
+        self.component.send(utils.tostring(iq))
+
+    # ---- vCard replication ----
 
     def getReplica(self, iq, fro, ID):
         lang = self.component.getUserLang(fro.bare)
@@ -118,6 +173,8 @@ class AdHoc:
         self.component.send(utils.tostring(vex))
         self.vCardSids[sid] = (fro, ID)
 
+    # ---- statistics ----
+
     def getStat(self, iq, fro, ID):
         lang = self.component.getUserLang(fro.bare)
         command = utils.createCommand(iq, "stat", "completed",
@@ -146,10 +203,12 @@ class AdHoc:
                        (upInDays, upInHours, upInMinutes, upInSecs))
         self.component.send(utils.tostring(iq))
 
+    # ---- user options ----
+
     def getOpts(self, iq, fro, ID):
         uid = self.component.db.getIdByJid(fro.bare)
         if not uid:
-            return
+            return  # unreachable via onCommand (gated), safety net
         opts = self.component.db.getOptsById(uid)
         lang = self.component.effectiveLang(opts[4])
         command = utils.createCommand(iq, "options", "executing",
@@ -170,12 +229,15 @@ class AdHoc:
         utils.addListSingle(form, "language",
                             i18n.t(lang, "field_language"),
                             lang, i18n.options())
+        utils.addCheckBox(form, "disableAccount",
+                          i18n.t(lang, "opts_disable_account"),
+                          bool(opts[5]))
         self.component.send(utils.tostring(iq))
 
     def setOpts(self, el, iq, sid, fro, ID):
         uid = self.component.db.getIdByJid(fro.bare)
         if not uid:
-            return
+            return  # unreachable via onCommand (gated), safety net
         opts = self.component.db.getOptsById(uid)
         lang = self.component.effectiveLang(opts[4])
         command = utils.createCommand(iq, "options", "completed", sid)
@@ -205,6 +267,131 @@ class AdHoc:
             (int(opts[2]), int(opts[3]), int(opts[1]), opts[0],
              opts[4], str(uid)))
         self.component.db.commit()
-        utils.createNote(command, "info",
-                         i18n.t(lang, "note_options_updated"))
+        note_key = "note_options_updated"
+        disabled_submitted = utils.xdataValue(el, 'disableAccount')
+        if disabled_submitted:
+            want_disabled = utils.strToBool(disabled_submitted)
+            if bool(opts[5]) != want_disabled:
+                self.component.db.setDisabled(uid, want_disabled)
+                if want_disabled:
+                    self.component.disconnectGuestSessions(fro.bare)
+                note_key = ("note_account_disabled" if want_disabled
+                            else "note_account_enabled")
+        utils.createNote(command, "info", i18n.t(lang, note_key))
+        self.component.send(utils.tostring(iq))
+
+    # ---- administration ----
+
+    def getAdmin(self, iq, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
+        command = utils.createCommand(iq, "admin", "executing",
+                                      self.getSid())
+        form = utils.createForm(command, "form")
+        utils.addTitle(form, i18n.t(lang, "admin_title"))
+        actions = [(action,
+                    i18n.t(lang, "admin_act_" + action))
+                   for action in self.ADMIN_ACTIONS]
+        utils.addListSingle(form, "action",
+                            i18n.t(lang, "admin_action_label"),
+                            self.ADMIN_ACTIONS[0], actions)
+        self.component.send(utils.tostring(iq))
+
+    def setAdmin(self, el, iq, sid, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
+        action = utils.xdataValue(el, 'action')
+        if action == "setlang":
+            self.adminSetLang(el, iq, sid, fro, lang)
+        elif action in ("restart", "stop"):
+            self.adminPower(action, el, iq, sid, fro, lang)
+        elif action == "announce":
+            self.adminAnnounce(el, iq, sid, fro, lang)
+        else:
+            # Unknown or missing action: show the menu again.
+            self.getAdmin(iq, fro, ID)
+
+    def adminSetLang(self, el, iq, sid, fro, lang):
+        chosen = (utils.xdataValue(el, 'language') or '').strip()
+        if not chosen:
+            command = utils.createCommand(iq, "admin", "executing",
+                                          sid)
+            form = utils.createForm(command, "form")
+            utils.addTitle(form, i18n.t(lang, "setlang_title"))
+            utils.addListSingle(form, "language",
+                                i18n.t(lang, "field_language"),
+                                self.component.config.DEFAULT_LANGUAGE,
+                                i18n.options())
+            utils.addHidden(form, "action", "setlang")
+            self.component.send(utils.tostring(iq))
+            return
+        changed = self.component.config.setDefaultLanguage(chosen)
+        command = utils.createCommand(iq, "admin", "completed", sid)
+        form = utils.createForm(command, "result")
+        utils.addTitle(form, i18n.t(lang, "setlang_title"))
+        utils.addLabel(form,
+                       i18n.t(lang, "note_setlang_done") %
+                       i18n.normalize(chosen))
+        self.component.send(utils.tostring(iq))
+        if not changed:
+            self.component.debug.logger.warning(
+                "Config file path unknown; default language %r "
+                "applied in memory only", i18n.normalize(chosen))
+
+    def adminPower(self, action, el, iq, sid, fro, lang):
+        act_key = "admin_act_" + action
+        confirmed = utils.xdataValue(el, 'confirm')
+        if confirmed == '':
+            command = utils.createCommand(iq, "admin", "executing",
+                                          sid)
+            form = utils.createForm(command, "form")
+            utils.addTitle(form, i18n.t(lang, act_key))
+            utils.addLabel(form, i18n.t(lang, act_key))
+            utils.addCheckBox(form, "confirm",
+                              i18n.t(lang, "admin_confirm_label"),
+                              False)
+            utils.addHidden(form, "action", action)
+            self.component.send(utils.tostring(iq))
+            return
+        command = utils.createCommand(iq, "admin", "completed", sid)
+        form = utils.createForm(command, "result")
+        if not utils.strToBool(confirmed):
+            utils.addTitle(form, i18n.t(lang, "replica_cancel_title"))
+            utils.addLabel(form,
+                           i18n.t(lang, "note_action_cancelled"))
+            self.component.send(utils.tostring(iq))
+            return
+        utils.addTitle(form, i18n.t(lang, act_key))
+        utils.addLabel(form, i18n.t(
+            lang, "note_restart_done" if action == "restart"
+            else "note_stop_done"))
+        self.component.send(utils.tostring(iq))
+        # Let the completion stanza reach the server before tearing
+        # the process down.
+        self.component.loop.call_later(
+            1.5, self.component.requestShutdown, action == "restart")
+
+    def adminAnnounce(self, el, iq, sid, fro, lang):
+        text = "\n".join(utils.xdataValueList(el, 'text')).strip()
+        if not text:
+            command = utils.createCommand(iq, "admin", "executing",
+                                          sid)
+            form = utils.createForm(command, "form")
+            utils.addTitle(form, i18n.t(lang, "announce_title"))
+            utils.addMemo(form, "text",
+                          i18n.t(lang, "announce_text_label"), '')
+            utils.addHidden(form, "action", "announce")
+            self.component.send(utils.tostring(iq))
+            return
+        count = 0
+        for jid in self.component.db.activeUserJids():
+            msg = self.component.make_message(mto=jid,
+                                              mfrom=self.component.cJid,
+                                              mtype="headline")
+            msg['body'] = text
+            msg.send()
+            count += 1
+        command = utils.createCommand(iq, "admin", "completed", sid)
+        form = utils.createForm(command, "result")
+        utils.addTitle(form, i18n.t(lang, "announce_title"))
+        utils.addLabel(form,
+                       i18n.t(lang, "note_announce_sent") % count)
         self.component.send(utils.tostring(iq))

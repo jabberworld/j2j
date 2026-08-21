@@ -36,6 +36,7 @@ STRINGS = {
         # ad-hoc command names (disco items / identities)
         'cmd_stat': 'Statistics',
         'cmd_options': 'Options',
+        'cmd_register': 'Registration',
         'cmd_replicate_vcard':
             "Replicate host's vCard to guest's account",
         'disco_commands': 'Commands',
@@ -69,6 +70,38 @@ STRINGS = {
         'opts_autoreply_forward': 'Always forward messages to me',
         'opts_reply_text': 'Text for Auto Reply (1000 chars max)',
         'note_options_updated': 'Options were updated',
+        # account suspension (user options)
+        'opts_disable_account':
+            'Disable my account (suspend transport access)',
+        'note_account_disabled':
+            'Account suspended. Use the same checkbox to re-enable.',
+        'note_account_enabled': 'Account re-enabled.',
+        'msg_suspended':
+            'Your account on this transport is suspended. Open the '
+            'transport settings (ad-hoc command "Options") to '
+            're-enable it, then log in again.',
+        # ad-hoc administration menu
+        'cmd_admin': 'Administration',
+        'admin_title': 'J2J Administration',
+        'admin_action_label': 'Action',
+        'admin_act_setlang': 'Set default language',
+        'admin_act_restart': 'Restart service',
+        'admin_act_stop': 'Stop service',
+        'admin_act_announce': 'Announcement',
+        'setlang_title': 'Set default language',
+        'note_setlang_done': 'Default language is now: %s',
+        'admin_confirm_label': 'Confirm execution',
+        'note_restart_done': 'The service is restarting...',
+        'note_stop_done': 'The service is stopping...',
+        'announce_title': 'Announcement',
+        'announce_text_label':
+            'Message text (sent to all registered users)',
+        'note_announce_sent': 'Announcement sent to %s users',
+        'note_action_cancelled': 'Action cancelled',
+        # ad-hoc registration
+        'note_register_done': 'Account registered.',
+        'note_register_updated': 'Registration data updated.',
+        'reg_error_invalid_data': 'Invalid registration data.',
     },
     'ru': {
         'reg_title': 'Форма регистрации J2J',
@@ -88,6 +121,7 @@ STRINGS = {
         'gw_prompt': 'XMPP-имя',
         'cmd_stat': 'Статистика',
         'cmd_options': 'Настройки',
+        'cmd_register': 'Регистрация',
         'cmd_replicate_vcard':
             'Скопировать vCard хоста в учётную запись гостя',
         'disco_commands': 'Команды',
@@ -121,6 +155,39 @@ STRINGS = {
         'opts_reply_text':
             'Текст автоответа (максимум 1000 символов)',
         'note_options_updated': 'Настройки сохранены',
+        'opts_disable_account':
+            'Отключить мою учётную запись '
+            '(приостановить доступ через транспорт)',
+        'note_account_disabled':
+            'Учётная запись отключена. Тот же переключатель '
+            'вернёт её в работу.',
+        'note_account_enabled': 'Учётная запись снова включена.',
+        'msg_suspended':
+            'Ваша учётная запись на этом транспорте отключена. '
+            'Откройте настройки транспорта (ad-hoc-команда '
+            '«Настройки»), чтобы включить её обратно, затем '
+            'войдите заново.',
+        'cmd_admin': 'Администрирование',
+        'admin_title': 'Администрирование J2J',
+        'admin_action_label': 'Действие',
+        'admin_act_setlang': 'Установить язык по умолчанию',
+        'admin_act_restart': 'Перезапустить сервис',
+        'admin_act_stop': 'Остановить сервис',
+        'admin_act_announce': 'Объявление',
+        'setlang_title': 'Установка языка по умолчанию',
+        'note_setlang_done': 'Язык по умолчанию: %s',
+        'admin_confirm_label': 'Подтвердить выполнение',
+        'note_restart_done': 'Сервис перезапускается...',
+        'note_stop_done': 'Сервис останавливается...',
+        'announce_title': 'Объявление',
+        'announce_text_label':
+            'Текст объявления (будет отправлен всем '
+            'зарегистрированным пользователям)',
+        'note_announce_sent': 'Объявление отправлено %s пользователям',
+        'note_action_cancelled': 'Действие отменено',
+        'note_register_done': 'Учётная запись зарегистрирована.',
+        'note_register_updated': 'Данные регистрации обновлены.',
+        'reg_error_invalid_data': 'Некорректные данные регистрации.',
     },
     'uk': {
         'reg_title': 'Форма реєстрації J2J',
@@ -140,6 +207,7 @@ STRINGS = {
         'gw_prompt': "XMPP-ім'я",
         'cmd_stat': 'Статистика',
         'cmd_options': 'Налаштування',
+        'cmd_register': 'Реєстрація',
         'cmd_replicate_vcard':
             'Скопіювати vCard хоста до облікового запису гостя',
         'disco_commands': 'Команди',
@@ -173,6 +241,39 @@ STRINGS = {
         'opts_reply_text':
             'Текст автовідповіді (макс. 1000 символів)',
         'note_options_updated': 'Налаштування збережено',
+        'opts_disable_account':
+            'Вимкнути мій обліковий запис '
+            '(призупинити доступ через транспорт)',
+        'note_account_disabled':
+            'Обліковий запис вимкнено. Той самий перемикач '
+            'поверне його в роботу.',
+        'note_account_enabled': 'Обліковий запис знову увімкнено.',
+        'msg_suspended':
+            "Ваш обліковий запис на цьому транспорті вимкнено. "
+            "Відкрийте налаштування транспорту (ad-hoc-команда "
+            "«Налаштування»), щоб увімкнути його знову, потім "
+            "увійдіть повторно.",
+        'cmd_admin': 'Адміністрування',
+        'admin_title': 'Адміністрування J2J',
+        'admin_action_label': 'Дія',
+        'admin_act_setlang': 'Встановити мову за замовчуванням',
+        'admin_act_restart': 'Перезапустити сервіс',
+        'admin_act_stop': 'Зупинити сервіс',
+        'admin_act_announce': 'Оголошення',
+        'setlang_title': 'Встановлення мови за замовчуванням',
+        'note_setlang_done': 'Мова за замовчуванням: %s',
+        'admin_confirm_label': 'Підтвердити виконання',
+        'note_restart_done': 'Сервіс перезапускається...',
+        'note_stop_done': 'Сервіс зупиняється...',
+        'announce_title': 'Оголошення',
+        'announce_text_label':
+            'Текст оголошення (надійде всім зареєстрованим '
+            'користувачам)',
+        'note_announce_sent': 'Оголошення надіслано %s користувачам',
+        'note_action_cancelled': 'Дію скасовано',
+        'note_register_done': 'Обліковий запис зареєстровано.',
+        'note_register_updated': 'Дані реєстрації оновлено.',
+        'reg_error_invalid_data': 'Некоректні дані реєстрації.',
     },
 }
 

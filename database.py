@@ -51,17 +51,23 @@ class Database:
             " autoreplybutforward INTEGER DEFAULT 0,"
             " onlyroster INTEGER DEFAULT 0,"
             " autoreplyenabled INTEGER DEFAULT 0,"
-            " language TEXT)")
+            " language TEXT,"
+            " disabled INTEGER DEFAULT 0)")
         self.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_options_user_id "
             "ON users_options (user_id)")
-        # Migration for databases created before the language column
-        # existed (CREATE TABLE IF NOT EXISTS does not alter old files).
+        # Migration for databases created before the language/disabled
+        # columns existed (CREATE TABLE IF NOT EXISTS does not alter
+        # old files).
         cols = [row[1] for row in
                 self.fetchall("PRAGMA table_info(users_options)")]
         if 'language' not in cols:
             self.execute(
                 "ALTER TABLE users_options ADD COLUMN language TEXT")
+        if 'disabled' not in cols:
+            self.execute(
+                "ALTER TABLE users_options ADD COLUMN "
+                "disabled INTEGER DEFAULT 0")
         self.commit()
 
     def execute(self, query, params=()):
@@ -104,7 +110,7 @@ class Database:
     def getOptsById(self, uid):
         data = self.fetchone(
             'SELECT replytext,autoreplybutforward,'
-            'onlyroster,autoreplyenabled,language FROM '
+            'onlyroster,autoreplyenabled,language,disabled FROM '
             'users_options WHERE user_id=?', (uid,))
         if data[0] is None:
             data[0] = ''
@@ -122,3 +128,26 @@ class Database:
         self.execute(
             'UPDATE users_options SET language=? WHERE user_id=?',
             (lang, str(uid)))
+
+    def isDisabled(self, uid):
+        """True when the account is suspended (missing options row or
+        legacy NULL count as enabled)."""
+        row = self.fetchone(
+            'SELECT disabled FROM users_options WHERE user_id=?',
+            (uid,))
+        if row is None:
+            return False
+        return bool(row[0])
+
+    def setDisabled(self, uid, flag):
+        self.execute(
+            'UPDATE users_options SET disabled=? WHERE user_id=?',
+            (int(bool(flag)), str(uid)))
+
+    def activeUserJids(self):
+        """Bare JIDs of registered, non-suspended users."""
+        rows = self.fetchall(
+            'SELECT u.jid FROM users u '
+            'LEFT JOIN users_options o ON o.user_id=u.id '
+            'WHERE COALESCE(o.disabled,0)=0')
+        return [jid for (jid,) in rows]
