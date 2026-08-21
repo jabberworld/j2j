@@ -4,6 +4,7 @@
 # Python3 / slixmpp port of the guest C2S connection.
 
 import copy
+import socket
 import time
 
 from slixmpp import ClientXMPP
@@ -71,7 +72,21 @@ class GuestClient(ClientXMPP):
             (host_jid.full, server, str(port), client_jid.full))
 
         if not test_mode:
-            self.connect()
+            # Prefer an explicit IPv4 address when connecting to the remote
+            # server: avoids hard failures on dual-stack hosts without an
+            # IPv6 route (AAAA tried first would fail with ENETUNREACH).
+            addr = None
+            try:
+                infos = socket.getaddrinfo(server, int(port),
+                                           socket.AF_INET, socket.SOCK_STREAM)
+                if infos:
+                    addr = infos[0][4][0]
+            except Exception:
+                addr = None
+            if addr:
+                self.connect(addr, int(port))
+            else:
+                self.connect()
 
     # ---- XML debug logging ----
 
