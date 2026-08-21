@@ -20,9 +20,6 @@ import debug
 from client import GuestClient
 from adhoc import AdHoc
 
-__id__ = "$Id: j2j.py 153 2011-02-16 12:54:49Z binary $"
-
-
 class J2JComponent(ComponentXMPP):
     def __init__(self, version, config, cJid):
         ComponentXMPP.__init__(self, str(cJid), config.PASSWORD,
@@ -203,10 +200,10 @@ class J2JComponent(ComponentXMPP):
             return
         data = self.db.getDataById(uid)
         resource = fro.resource
-        if resource is None:
-            resource = ''
-        else:
+        if resource:
             resource = "/" + resource
+        else:
+            resource = ""
         try:
             clientJid = JID(data[0] + "@" + data[2] + resource)
         except InvalidJID:
@@ -552,7 +549,7 @@ class J2JComponent(ComponentXMPP):
             if self.config.ADMINS and \
                self.config.REGISTRATION_NOTIFY:
                 msg = self.make_message(
-                    mtype="chat", mfrom=self.cJid)
+                    mto=self.cJid, mtype="chat", mfrom=self.cJid)
                 msg['body'] = "J2J %s Registration notify:\n" \
                               "Host JID:%s\nGuest JID:%s" % (
                                   self.cJid, fro.full,

@@ -7,8 +7,6 @@ import copy
 
 from slixmpp.xmlstream import ET
 
-__id__ = "$Id: utils.py 146 2011-02-01 17:53:27Z binary $"
-
 COMPONENT_NS = 'jabber:component:accept'
 CLIENT_NS = 'jabber:client'
 COMMANDS_NS = 'http://jabber.org/protocol/commands'
@@ -42,7 +40,6 @@ errorCodeMap = {
     "unexpected-request": 400
 }
 
-
 def retag(el, src_ns, dst_ns):
     """Return a deep copy of *el* with every element whose tag lives in
     *src_ns* renamed into *dst_ns*. Elements using other namespaces are
@@ -55,13 +52,11 @@ def retag(el, src_ns, dst_ns):
         retag_in_place(child, src_ns, dst_ns)
     return xml
 
-
 def retag_in_place(el, src_ns, dst_ns):
     if el.tag.startswith('{%s}' % src_ns):
         el.tag = '{%s}%s' % (dst_ns, el.tag.split('}', 1)[1])
     for child in list(el):
         retag_in_place(child, src_ns, dst_ns)
-
 
 def quoteJID(ujid, cJid):
     if ujid == '' or ujid is None:
@@ -81,7 +76,6 @@ def quoteJID(ujid, cJid):
         qjid = qjid + '/' + resource
     return qjid
 
-
 def unquoteJID(qjid, cJid):
     if qjid == '' or qjid is None:
         return ''
@@ -95,12 +89,10 @@ def unquoteJID(qjid, cJid):
         ujid = ujid + '/' + resource
     return ujid
 
-
 def strToBool(string):
     if string == "0":
         return False
     return True
-
 
 def locname(el):
     """Return the local (namespace stripped) name of an XML element."""
@@ -108,13 +100,11 @@ def locname(el):
         return el.tag.split('}', 1)[1]
     return el.tag
 
-
 def nsname(el):
     """Return the namespace URI of an XML element ('' if none)."""
     if '}' in el.tag:
         return el.tag.split('}')[0][1:]
     return ''
-
 
 def addsub(parent, name, ns, attrib=None, text=None):
     """Create a child element (or a new root when *parent* is None) in
@@ -131,7 +121,6 @@ def addsub(parent, name, ns, attrib=None, text=None):
         child.text = text
     return child
 
-
 def children(el, name=None):
     """Iterate over the children of a slixmpp stanza or ET element."""
     node = el.xml if hasattr(el, 'xml') else el
@@ -139,12 +128,10 @@ def children(el, name=None):
         if name is None or locname(child) == name:
             yield child
 
-
 # ---- jabber:x:data form builders (used by the register flow) ----
 
 X_DATA_NS = 'jabber:x:data'
 X_DATA = '{%s}' % X_DATA_NS
-
 
 def createForm(iq, formType):
     form = ET.Element(X_DATA + 'x')
@@ -153,12 +140,10 @@ def createForm(iq, formType):
     iq.append(form)
     return form
 
-
 def addTitle(form, caption):
     el = ET.SubElement(form, X_DATA + 'title')
     el.text = caption
     return el
-
 
 def addLabel(form, caption):
     label = ET.SubElement(form, X_DATA + 'field')
@@ -166,7 +151,6 @@ def addLabel(form, caption):
     value = ET.SubElement(label, X_DATA + 'value')
     value.text = caption
     return label
-
 
 def addCheckBox(form, name, caption, value):
     checkBox = ET.SubElement(form, X_DATA + 'field')
@@ -176,7 +160,6 @@ def addCheckBox(form, name, caption, value):
     valueEl = ET.SubElement(checkBox, X_DATA + 'value')
     valueEl.text = '1' if value else '0'
     return checkBox
-
 
 def addTextBox(form, name, caption, value, required=False):
     textBox = ET.SubElement(form, X_DATA + 'field')
@@ -190,7 +173,6 @@ def addTextBox(form, name, caption, value, required=False):
         ET.SubElement(textBox, X_DATA + 'required')
     return textBox
 
-
 def addTextPrivate(form, name, caption, value, required=False):
     textBox = ET.SubElement(form, X_DATA + 'field')
     textBox.set('type', 'text-private')
@@ -203,7 +185,6 @@ def addTextPrivate(form, name, caption, value, required=False):
         ET.SubElement(textBox, X_DATA + 'required')
     return textBox
 
-
 def addMemo(form, name, caption, value):
     memo = ET.SubElement(form, X_DATA + 'field')
     memo.set('type', 'text-multi')
@@ -213,7 +194,6 @@ def addMemo(form, name, caption, value):
         valueEl = ET.SubElement(memo, X_DATA + 'value')
         valueEl.text = line
     return memo
-
 
 def tostring(xml, xmlns=None):
     """Serialize an ElementTree element to a Unicode string. Namespaces
@@ -259,7 +239,6 @@ def tostring(xml, xmlns=None):
     ser(xml, '')
     return ''.join(out)
 
-
 def addDiscoItem(query, jid, name=None, node=None):
     item = ET.SubElement(query, '{%s}item' % DISCO_ITEMS_NS)
     item.set('jid', str(jid))
@@ -269,7 +248,6 @@ def addDiscoItem(query, jid, name=None, node=None):
         item.set('node', str(node))
     return item
 
-
 def createCommand(iq, node, status, sessionid):
     command = ET.SubElement(iq, '{%s}command' % COMMANDS_NS)
     command.set('node', node)
@@ -278,13 +256,11 @@ def createCommand(iq, node, status, sessionid):
         command.set('sessionid', str(sessionid))
     return command
 
-
 def createNote(command, notetype, text):
     note = ET.SubElement(command, '{%s}note' % COMMANDS_NS)
     note.set('type', notetype)
     note.text = text
     return note
-
 
 def xdataFields(el):
     """Yield (var, [value texts]) pairs of every submitted jabber:x:data
@@ -308,13 +284,11 @@ def xdataFields(el):
                         values.append(value.text or '')
                 yield field.get('var'), values
 
-
 def xdataValue(el, var):
     for name, values in xdataFields(el):
         if name == var:
             return values[0] if values else ''
     return ''
-
 
 def xdataValueList(el, var):
     for name, values in xdataFields(el):

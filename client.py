@@ -15,9 +15,6 @@ from slixmpp.xmlstream.handler import Callback
 import utils
 from roster import Roster
 
-__id__ = "$Id: client.py 154 2011-05-09 13:48:13Z binary $"
-
-
 class GuestClient(ClientXMPP):
     PING_INTERVAL = 60
 

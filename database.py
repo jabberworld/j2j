@@ -6,9 +6,6 @@
 import os
 import sqlite3
 
-__id__ = "$Id: database.py 153 2011-02-16 12:54:49Z binary $"
-
-
 class Database:
     def __init__(self, config):
         self.config = config

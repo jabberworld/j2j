@@ -8,9 +8,6 @@ from slixmpp.stanza.roster import RosterItem
 
 from utils import quoteJID
 
-__id__ = "$Id: roster.py 152 2011-02-16 12:41:51Z binary $"
-
-
 class Roster:
     def __init__(self, host):
         self.host = host

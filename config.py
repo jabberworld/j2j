@@ -6,9 +6,6 @@
 import configparser
 import os
 
-__id__ = "$Id: config.py 153 2011-02-16 12:54:49Z binary $"
-
-
 def config_decorator(func):
     def wrapper(section, option, default=None, required=False):
         try:
@@ -18,7 +15,6 @@ def config_decorator(func):
                 raise
             return default
     return wrapper
-
 
 class Config:
 

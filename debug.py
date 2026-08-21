@@ -1,8 +1,5 @@
 import time
 
-__id__ = "$Id: debug.py 137 2010-03-19 14:38:43Z binary $"
-
-
 class Debug:
     def __init__(self, logFile, registrations, logins, xmlLogFile,
                  componentXmlLog, clientsXmlLog, clientJidsToLog):

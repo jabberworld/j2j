@@ -7,9 +7,6 @@ import time
 
 import utils
 
-__id__ = "$Id: adhoc.py 152 2011-02-16 12:41:51Z binary $"
-
-
 class AdHoc:
     def __init__(self, component):
         self.commands = {

@@ -15,9 +15,6 @@ import sys
 from config import Config
 import j2j
 
-__id__ = "$Id: main.py 149 2011-02-10 13:32:52Z binary $"
-
-
 def daemonize():
     """Simple double-fork daemonization (POSIX)."""
     if os.fork() > 0:
@@ -31,7 +28,6 @@ def daemonize():
     os.dup2(devnull, 0)
     os.dup2(devnull, 1)
     os.dup2(devnull, 2)
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -68,7 +64,6 @@ def main():
         except NotImplementedError:
             signal.signal(sig, c.shutdownHandler)
     loop.run_forever()
-
 
 if __name__ == "__main__":
     main()
