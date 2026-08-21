@@ -5,6 +5,8 @@
 
 import copy
 
+XML_NS = 'http://www.w3.org/XML/1998/namespace'
+
 from slixmpp.xmlstream import ET
 
 COMPONENT_NS = 'jabber:component:accept'
@@ -217,7 +219,10 @@ def tostring(xml, xmlns=None):
         for key, value in el.attrib.items():
             if key == 'xmlns':
                 continue
-            attrs += ' %s="%s"' % (key, _esc(value, {'"': '&quot;'}))
+            aname = key
+            if aname.startswith('{%s}' % XML_NS):
+                aname = 'xml:%s' % aname.split('}', 1)[1]
+            attrs += ' %s="%s"' % (aname, _esc(value, {'"': '&quot;'}))
         if ns and ns != parent_ns:
             attrs += ' xmlns="%s"' % ns
         children = list(el)
