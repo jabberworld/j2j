@@ -1,0 +1,32 @@
+-- J2J sqlite3 schema (Python3/slixmpp port).
+-- Tables are created automatically by database.py on startup if missing.
+
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    jid TEXT UNIQUE,
+    username TEXT,
+    domain TEXT,
+    server TEXT,
+    password TEXT,
+    port INTEGER,
+    import_roster INTEGER DEFAULT 0,
+    remove_from_guest_roster INTEGER DEFAULT 0
+);
+
+CREATE TABLE rosters (
+    user_id INTEGER,
+    jid TEXT
+);
+
+CREATE INDEX idx_rosters_user_id ON rosters (user_id);
+CREATE INDEX idx_rosters_user_jid ON rosters (user_id, jid);
+
+CREATE TABLE users_options (
+    user_id INTEGER UNIQUE,
+    replytext TEXT,
+    autoreplybutforward INTEGER DEFAULT 0,
+    onlyroster INTEGER DEFAULT 0,
+    autoreplyenabled INTEGER DEFAULT 0
+);
+
+CREATE INDEX idx_users_options_user_id ON users_options (user_id);
