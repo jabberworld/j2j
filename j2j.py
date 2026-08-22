@@ -235,19 +235,6 @@ class J2JComponent(ComponentXMPP):
             msg.send()
             return
         data = self.db.getDataById(uid)
-        resource = fro.resource
-        if resource:
-            resource = "/" + resource
-        else:
-            resource = ""
-        try:
-            clientJid = JID(data[0] + "@" + data[2] + resource)
-        except InvalidJID:
-            self.sendError(el, etype="modify",
-                           condition="not-acceptable")
-            return
-        if data[3] is None or data[3] == '':
-            data[3] = data[2]
         newmd5 = hashlib.md5(
             ('%s@%s' % (data[0], data[2])).encode('utf-8')).hexdigest()
         if fro.full not in self.clients and \
@@ -286,14 +273,7 @@ class J2JComponent(ComponentXMPP):
                     "User %s has conflict login:\n%s" %
                     (fro.full, utils.tostring(el.xml)))
                 return
-            self.send_presence(
-                ptype="unavailable", pto=fro.full, pfrom=self.cJid,
-                pstatus=i18n.t(
-                    self.effectiveLang(self.db.getLangById(uid)),
-                    "status_logging_in"))
-            self.clients[fro.full] = GuestClient(
-                uid, el, self, fro, clientJid, data[3], data[1],
-                data[4], data[5], data[6], data[7])
+            self.connectGuestSession(fro, uid, el)
         elif fro.full in self.clients and presenceType == "unavailable":
             if self.clients[fro.full].connected:
                 self.debug.loginsLog(
@@ -325,6 +305,34 @@ class J2JComponent(ComponentXMPP):
                 cl = self.clients[jid]
                 if cl.connected:
                     cl.disconnect()
+
+    def connectGuestSession(self, fro, uid, el):
+        """(Re)establish a guest session for *uid* using stored
+        credentials. *fro* is the host JID (used as the session key and
+        the remote resource); *el* is the presence stanza replayed to
+        the remote server on session start. Shared by the inbound
+        available-presence path and the ad-hoc Options re-enable path."""
+        if fro.full in self.clients:
+            return
+        lang = self.effectiveLang(self.db.getLangById(uid))
+        self.send_presence(
+            ptype="unavailable", pto=fro.full, pfrom=self.cJid,
+            pstatus=i18n.t(lang, "status_logging_in"))
+        data = self.db.getDataById(uid)
+        if not data:
+            return
+        resource = fro.resource or ""
+        try:
+            clientJid = JID(data[0] + "@" + data[2] + resource)
+        except InvalidJID:
+            self.sendError(el, etype="modify",
+                           condition="not-acceptable")
+            return
+        if data[3] is None or data[3] == '':
+            data[3] = data[2]
+        self.clients[fro.full] = GuestClient(
+            uid, el, self, fro, clientJid, data[3], data[1],
+            data[4], data[5], data[6], data[7])
 
     # ---- iq routing ----
 

@@ -297,8 +297,13 @@ class AdHoc:
                 self.component.db.setDisabled(uid, want_disabled)
                 if want_disabled:
                     self.component.disconnectGuestSessions(fro.bare)
-                note_key = ("note_account_disabled" if want_disabled
-                            else "note_account_enabled")
+                    note_key = "note_account_disabled"
+                else:
+                    note_key = "note_account_enabled"
+                    pres = self.component.make_presence(
+                        ptype="available", pto=self.component.cJid,
+                        pfrom=fro.full)
+                    self.component.connectGuestSession(fro, uid, pres)
         # Only touch the guest-roster cleanup flag when the form
         # actually carried the field (older cached forms omit it).
         # Applies to new guest sessions after reconnect.
