@@ -323,7 +323,8 @@ class J2JComponent(ComponentXMPP):
             return
         resource = fro.resource or ""
         try:
-            clientJid = JID(data[0] + "@" + data[2] + resource)
+            clientJid = JID(data[0] + "@" + data[2] +
+                           ("/" + resource if resource else ""))
         except InvalidJID:
             self.sendError(el, etype="modify",
                            condition="not-acceptable")
