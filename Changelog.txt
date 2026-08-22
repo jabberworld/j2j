@@ -1,17 +1,11 @@
 J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
 2.2.0:
-	[add] Переписан основной код на Python 3, заменён старый SleekXMPP на современный Slixmpp.
 	[add] Реализована поддержка XEP‑0144 (Roster Item Exchange) – импорт контактов единым запросом.
 	[add] Выбор механизма импорта ростера в форме регистрации: отключить, через подписки, через XEP‑0144.
 	[add] Новая опция конфигурации [general] import_mode (off|subscribe|rosterx|auto) и параметр roster_group_name для имени группы импортируемых контактов.
 	[add] Админ‑команда "admin" расширена действиями setmode и setgroup для изменения этих параметров в режиме работы.
 	[add] "auto" режим пробует поддержку XEP‑0144 у клиента (disco#info) и выбирает её при наличии.
-	[add] Регистрация теперь доступна и как ad‑hoc команда "register"; общий код обработки используется для iq:register и ad‑hoc.
 	[add] Рефакторинг и миграция SQLite‑схемы (добавление колонки import_group).
-	[imp] Ад‑hoc команды фильтруются по статусу пользователя (админ/зарегистрирован).
-	[imp] Прямые запросы к скрытым ад‑hoc командам теперь отвечаются корректными ошибками (not-authorized / registration-required).
-	[chg] "Remove contacts from guest roster automatically" перенесён из формы регистрации в ад‑hoc Options; теперь применяется только к новым сессиям после перезапуска.
-	[fix] Улучшена обработка булевых полей: отсутствие или значение "false" больше не считается True.
 	[fix] Исправлен разбор i18n‑ключей и согласован порядок переводов.
 	[fix] Обновлены комментарии в конфиге и сохранение опций без потери формата.
 	[fix] Устранены проблемы с импортом и экспортом роутов, а также с миграцией сторонних параметров.
@@ -19,7 +13,7 @@ J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
 	[fix] Прочие мелкие исправления и чистка кода.
 
 2.1.1:
-	[add] Registration form: "Username" and "Server" fields merged into a single "Jabber ID" field.
+	[imp] Registration form: "Username" and "Server" fields merged into a single "Jabber ID" field
 
 2.1.0:
 	[add] Localized interface (en/ru/uk): registration form, ad-hoc commands, gateway prompts, login status, disco names
@@ -31,20 +25,14 @@ J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
 	[add] Users can suspend and re-enable their own account via the ad-hoc "Options" command; suspended accounts cannot log in
 	[add] Pidfile is removed on graceful shutdown
 	[add] Registration is now also available as the ad-hoc "register" command; iq:register and ad-hoc share one implementation
-	[add] Roster import mechanism selectable in the registration form: subscription requests or XEP-0144 roster item exchange (single stanza with contacts placed into an editable group)
-	[add] "auto" default probes the client via disco#info and offers roster item exchange when XEP-0144 support is announced
-	[add] [general] import_mode and roster_group_name options; changeable at runtime via the ad-hoc Administration command
 	[imp] Ad-hoc commands list is filtered per requester: administration hidden from non-admins, commands needing registration hidden from unregistered users
 	[imp] Direct requests to hidden ad-hoc commands by unauthorized users are answered with proper error stanzas (not-authorized / registration-required) instead of silence
 	[chg] "Remove contacts from guest roster automatically" moved from the registration form to the ad-hoc Options command; applies to new guest sessions after reconnect
 	[fix] Admin JID list parsing strips whitespace
 	[fix] Boolean form fields: missing or 'false' values are no longer treated as True (previously a missing "confirm" checkbox executed admin actions)
 
-2.0.1:
-	[add] Localized interface (en/ru/uk): registration form, ad-hoc commands, gateway prompts, login status, disco names
-	[add] "Language" selection in the registration form and in the ad-hoc "Options" command; stored per user
-	[add] [general] default_language config option for the transport-wide default language
-	[imp] Registration form: "Username" and "Server" fields merged into a single "Jabber ID" field
+2.0.0:
+	[add] Переписан основной код на Python 3, заменён старый SleekXMPP на современный Slixmpp.
 
 1.2.10:
 	[add] Roster import by sending subscribe-presence and settings for it in jabber:iq:register form
@@ -56,4 +44,29 @@ J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
 	[chg] use hashlib instead of md5
 
 	[imp] db schema improvements
-	[imp] pings for client connections to prevent disconnecting from ...
+	[imp] pings for client connections to prevent disconnecting from some wrong servers like livejournal.com
+	[imp] remove postgresql's hint about quoted strings
+        [imp] pings for mysql to keep connection alive
+
+	[fix] Add message body in error stanza
+	[fix] Add handling of DNSServerError when connecting via C2S
+	[fix] Fix AdHoc "execute" handling for Gajim
+	[fix] AdHoc returns approprite error stanza now
+	[fix] Fix crash when "to" attribute is not specified in a client stanza
+
+1.1.9:
+    [fix] Autoanswer fix: no answer to groupchat and headline messages
+
+1.1.8:
+    [add] Experemental MySQL support.
+    [add] vCard replication
+    [add] Some command-line options
+    [add] Some logs
+
+    [chg] New configuration scheme
+ 
+    [fix] jabber:iq:roster "from" attribute interpretation fix
+    [fix] svn ps svn:executable \* https://svn.jrudevels.org/j2j/trunk/main.py; svn ps svn:ignore \*.pyc https://svn.jrudevels.org/j2j/trunk/
+    [fix] AdHoc handling bug
+    [fix] Localization problems
+    [fix] error stanzas
