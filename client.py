@@ -305,15 +305,6 @@ class GuestClient(ClientXMPP):
     def onIq(self, el):
         iqId = el['id'] or None
         iqType = el['type'] or None
-        if iqId and iqId in self.component.adhoc.vCardSids:
-            fro, ID = self.component.adhoc.vCardSids[iqId]
-            if fro.full != self.host_jid.full:
-                return
-            del self.component.adhoc.vCardSids[iqId]
-            self.component.adhoc.finishReplica(
-                fro, ID, iqId, iqType == "result")
-            return
-
         for query in list(el.xml):
             local = query.tag.split('}', 1)[-1]
             ns = query.tag.split('}')[0][1:] if '}' in query.tag else ''

@@ -363,8 +363,8 @@ class J2JComponent(ComponentXMPP):
         for query in el.xml:
             xmlns = utils.nsname(query)
             node = query.get("node")
-            if xmlns == utils.VCARD_NS and iqType == "result":
-                self.result_vCard(el, fro, ID)
+            if xmlns == utils.VCARD_NS and iqType in ("result", "error"):
+                self.result_vCard(el, fro, ID, iqType == "result")
                 return
             if xmlns == "jabber:iq:register" and iqType == "get":
                 self.getRegister(el, fro, ID)
@@ -408,7 +408,7 @@ class J2JComponent(ComponentXMPP):
         self.sendError(el, etype="cancel",
                        condition="feature-not-implemented")
 
-    def result_vCard(self, el, fro, ID):
+    def result_vCard(self, el, fro, ID, success=True):
         entry = self.adhoc.vCardSids.get(ID)
         if not entry:
             return
@@ -417,11 +417,13 @@ class J2JComponent(ComponentXMPP):
         if entry[0].full not in self.clients:
             return
         del self.adhoc.vCardSids[ID]
-        xml = utils.retag(el.xml, utils.COMPONENT_NS, utils.CLIENT_NS)
-        xml.attrib.pop("to", None)
-        xml.attrib.pop("from", None)
-        xml.set("type", "set")
-        self.clients[entry[0].full].send(utils.tostring(xml))
+        if success:
+            xml = utils.retag(el.xml, utils.COMPONENT_NS, utils.CLIENT_NS)
+            xml.attrib.pop("to", None)
+            xml.attrib.pop("from", None)
+            xml.set("type", "set")
+            self.clients[entry[0].full].send(utils.tostring(xml))
+        self.adhoc.finishReplica(entry[0], entry[1], ID, success)
 
     # ---- XEP-0144 support probing ----
 
