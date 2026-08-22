@@ -3,7 +3,6 @@
 
 # Python3 / slixmpp port: sqlite3 backend.
 
-import os
 import sqlite3
 
 class Database:
@@ -108,10 +107,15 @@ class Database:
             "users WHERE id=?", (uid,))
 
     def getOptsById(self, uid):
+        """Options tuple: [replytext, autoreplybutforward, onlyroster,
+        autoreplyenabled, language, disabled, remove_from_guest_roster]
+        (the last one lives in the users table)."""
         data = self.fetchone(
-            'SELECT replytext,autoreplybutforward,'
-            'onlyroster,autoreplyenabled,language,disabled FROM '
-            'users_options WHERE user_id=?', (uid,))
+            'SELECT o.replytext,o.autoreplybutforward,'
+            'o.onlyroster,o.autoreplyenabled,o.language,o.disabled,'
+            'u.remove_from_guest_roster FROM '
+            'users_options o JOIN users u ON u.id=o.user_id '
+            'WHERE o.user_id=?', (uid,))
         if data[0] is None:
             data[0] = ''
         return data
@@ -142,6 +146,11 @@ class Database:
     def setDisabled(self, uid, flag):
         self.execute(
             'UPDATE users_options SET disabled=? WHERE user_id=?',
+            (int(bool(flag)), str(uid)))
+
+    def setRemoveFromGuestRoster(self, uid, flag):
+        self.execute(
+            'UPDATE users SET remove_from_guest_roster=? WHERE id=?',
             (int(bool(flag)), str(uid)))
 
     def activeUserJids(self):

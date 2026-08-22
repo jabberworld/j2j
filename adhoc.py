@@ -232,6 +232,9 @@ class AdHoc:
         utils.addCheckBox(form, "disableAccount",
                           i18n.t(lang, "opts_disable_account"),
                           bool(opts[5]))
+        utils.addCheckBox(form, "remove_from_roster",
+                          i18n.t(lang, "field_remove_from_roster"),
+                          bool(opts[6]))
         self.component.send(utils.tostring(iq))
 
     def setOpts(self, el, iq, sid, fro, ID):
@@ -277,6 +280,13 @@ class AdHoc:
                     self.component.disconnectGuestSessions(fro.bare)
                 note_key = ("note_account_disabled" if want_disabled
                             else "note_account_enabled")
+        # Only touch the guest-roster cleanup flag when the form
+        # actually carried the field (older cached forms omit it).
+        # Applies to new guest sessions after reconnect.
+        rfr_submitted = utils.xdataValue(el, 'remove_from_roster')
+        if rfr_submitted is not None:
+            self.component.db.setRemoveFromGuestRoster(
+                uid, utils.strToBool(rfr_submitted))
         utils.createNote(command, "info", i18n.t(lang, note_key))
         self.component.send(utils.tostring(iq))
 

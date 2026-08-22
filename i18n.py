@@ -106,7 +106,7 @@ STRINGS = {
     'ru': {
         'reg_title': 'Форма регистрации J2J',
         'reg_new_instructions':
-            'Введите данные вашей Jabber-учётной записи',
+            'Введите данные вашей учетной записи в Jabber',
         'reg_edit_instructions': 'Измените данные',
         'field_jid': 'Jabber ID',
         'field_password': 'Пароль',

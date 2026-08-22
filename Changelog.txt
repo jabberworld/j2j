@@ -6,6 +6,7 @@ J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
 	[add] Registration is now also available as the ad-hoc "register" command; iq:register and ad-hoc share one implementation
 	[imp] Ad-hoc commands list is filtered per requester: administration hidden from non-admins, commands needing registration hidden from unregistered users
 	[imp] Direct requests to hidden ad-hoc commands by unauthorized users are answered with proper error stanzas (not-authorized / registration-required) instead of silence
+	[chg] "Remove contacts from guest roster automatically" moved from the registration form to the ad-hoc Options command; applies to new guest sessions after reconnect
 	[fix] Admin JID list parsing strips whitespace
 	[fix] Boolean form fields: missing or 'false' values are no longer treated as True (previously a missing "confirm" checkbox executed admin actions)
 

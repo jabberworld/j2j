@@ -487,14 +487,11 @@ class J2JComponent(ComponentXMPP):
         utils.addTextBox(form, "domain", i18n.t(lang, "field_domain"),
                          data[3])
         utils.addTextBox(form, "port", i18n.t(lang, "field_port"),
-                         str(data[4]))
+                         str(data[4] if data[4] is not None else 5222))
         if not edit:
             utils.addCheckBox(form, "import_roster",
                               i18n.t(lang, "field_import_roster"),
                               data[5])
-        utils.addCheckBox(form, "remove_from_roster",
-                          i18n.t(lang, "field_remove_from_roster"),
-                          data[6])
         utils.addListSingle(form, "language",
                             i18n.t(lang, "field_language"),
                             lang, i18n.options())
@@ -537,21 +534,21 @@ class J2JComponent(ComponentXMPP):
             port = 5222
         import_roster = utils.strToBool(
             utils.xdataValue(el, 'import_roster'))
-        remove_from_roster = utils.strToBool(
-            utils.xdataValue(el, 'remove_from_roster'))
         lang_submitted = (utils.xdataValue(el, 'language') or '').strip()
         language = i18n.normalize(lang_submitted) if lang_submitted \
             else None
         uid = self.db.getIdByJid(fro.bare)
         edit = uid is not None
         if not edit:
+            # remove_from_guest_roster defaults to 0 (schema default);
+            # it is managed via the ad-hoc Options command.
             self.db.execute(
                 "INSERT INTO users "
                 "(jid,username,domain,server,password,port,"
-                "import_roster,remove_from_guest_roster) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "import_roster) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (fro.bare, username, domain, server, password,
-                 port, int(import_roster), int(remove_from_roster)))
+                 port, int(import_roster)))
             uid = self.db.getIdByJid(fro.bare)
             self.db.execute(
                 "INSERT INTO users_options (user_id,language) "
@@ -590,10 +587,8 @@ class J2JComponent(ComponentXMPP):
                 "DELETE FROM rosters WHERE user_id=?", (str(uid),))
         self.db.execute(
             "UPDATE users SET username=?,domain=?,server=?,"
-            "password=?,port=?,remove_from_guest_roster=? "
-            "WHERE id=?",
-            (username, domain, server, password, port,
-             int(remove_from_roster), str(uid)))
+            "password=?,port=? WHERE id=?",
+            (username, domain, server, password, port, str(uid)))
         # Only touch the stored language when the form actually
         # carried the field (older cached forms may omit it).
         if lang_submitted:
