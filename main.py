@@ -41,7 +41,7 @@ def main():
                         action="store_true")
     options = parser.parse_args()
 
-    version = "2.2.3"
+    version = "2.2.4"
 
     if options.configFile:
         config = Config(options.configFile)
