@@ -1,14 +1,23 @@
 J2J Component (http://wiki.jrudevels.org/J2J) Changelog:
-2.0.2:
-	[add] Ad-hoc "Administration" command for admins: set default language (persisted to the config file), restart/stop service, announcement broadcast to registered users
-	[add] Users can suspend and re-enable their own account via the ad-hoc "Options" command; suspended accounts cannot log in
-	[add] Pidfile is removed on graceful shutdown
-	[add] Registration is now also available as the ad-hoc "register" command; iq:register and ad-hoc share one implementation
-	[imp] Ad-hoc commands list is filtered per requester: administration hidden from non-admins, commands needing registration hidden from unregistered users
-	[imp] Direct requests to hidden ad-hoc commands by unauthorized users are answered with proper error stanzas (not-authorized / registration-required) instead of silence
-	[chg] "Remove contacts from guest roster automatically" moved from the registration form to the ad-hoc Options command; applies to new guest sessions after reconnect
-	[fix] Admin JID list parsing strips whitespace
-	[fix] Boolean form fields: missing or 'false' values are no longer treated as True (previously a missing "confirm" checkbox executed admin actions)
+2.1.0:
+	[add] Переписан основной код на Python 3, заменён старый SleekXMPP на современный Slixmpp.
+	[add] Реализована поддержка XEP‑0144 (Roster Item Exchange) – импорт контактов единым запросом.
+	[add] Выбор механизма импорта ростера в форме регистрации: отключить, через подписки, через XEP‑0144.
+	[add] Новая опция конфигурации [general] import_mode (off|subscribe|rosterx|auto) и параметр roster_group_name для имени группы импортируемых контактов.
+	[add] Админ‑команда "admin" расширена действиями setmode и setgroup для изменения этих параметров в режиме работы.
+	[add] "auto" режим пробует поддержку XEP‑0144 у клиента (disco#info) и выбирает её при наличии.
+	[add] Регистрация теперь доступна и как ad‑hoc команда "register"; общий код обработки используется для iq:register и ad‑hoc.
+	[add] Рефакторинг и миграция SQLite‑схемы (добавление колонки import_group).
+	[imp] Ад‑hoc команды фильтруются по статусу пользователя (админ/зарегистрирован).
+	[imp] Прямые запросы к скрытым ад‑hoc командам теперь отвечаются корректными ошибками (not-authorized / registration-required).
+	[chg] "Remove contacts from guest roster automatically" перенесён из формы регистрации в ад‑hoc Options; теперь применяется только к новым сессиям после перезапуска.
+	[fix] Улучшена обработка булевых полей: отсутствие или значение "false" больше не считается True.
+	[fix] Исправлен разбор i18n‑ключей и согласован порядок переводов.
+	[fix] Обновлены комментарии в конфиге и сохранение опций без потери формата.
+	[fix] Устранены проблемы с импортом и экспортом роутов, а также с миграцией сторонних параметров.
+	[fix] Обновлен вывод версии (self.VERSION) в логах.
+	[fix] Прочие мелкие исправления и чистка кода.
+
 
 2.0.1:
 	[add] Localized interface (en/ru/uk): registration form, ad-hoc commands, gateway prompts, login status, disco names
