@@ -37,6 +37,12 @@ class AdHoc:
                       False, True]}
         self.sid = 0
         self.vCardSids = {}
+        # Session ids of commands that already reached "completed".
+        # Used to ignore a later "Finish"/"Завершить" press (which the
+        # client sends as action="complete") so the form just closes
+        # instead of re-running the stage-2 handler and opening a
+        # second empty form.
+        self.done_sids = {}
 
         self.component = component
         self.config = component.config
@@ -94,6 +100,16 @@ class AdHoc:
         iq.set("id", ID)
         iq.set("type", "result")
 
+        if sid in self.done_sids:
+            # The command already finished; the client is only
+            # acknowledging the completed form (pressing "Finish" /
+            # "Завершить"). Confirm closure without re-running the
+            # stage-2 handler, which would otherwise open a second
+            # empty form.
+            utils.createCommand(iq, node, "completed", sid)
+            self.component.send(utils.tostring(iq))
+            return None, None
+
         if action == 'execute' and sid is None:
             self.commands[node][1](iq, fro, ID)
             return None, None
@@ -145,6 +161,7 @@ class AdHoc:
         else:
             utils.addLabel(form,
                            i18n.t(lang, "reg_error_invalid_data"))
+        self.done_sids[sid] = True
         self.component.send(utils.tostring(iq))
 
     # ---- vCard replication ----
@@ -181,6 +198,7 @@ class AdHoc:
             utils.addTitle(form,
                            i18n.t(lang, "replica_cancel_title"))
             utils.addLabel(form, i18n.t(lang, "replica_cancelled"))
+            self.done_sids[sid] = True
             self.component.send(utils.tostring(iq))
             return
         vex = utils.addsub(None, "iq", utils.COMPONENT_NS)
@@ -211,6 +229,7 @@ class AdHoc:
         else:
             utils.addTitle(form, i18n.t(lang, "replica_err_title"))
             utils.addLabel(form, i18n.t(lang, "replica_error"))
+        self.done_sids[sid] = True
         self.component.send(utils.tostring(iq))
 
     # ---- statistics ----
@@ -333,6 +352,7 @@ class AdHoc:
             self.component.db.setRemoveFromGuestRoster(
                 uid, utils.strToBool(rfr_submitted))
         utils.createNote(command, "info", i18n.t(lang, note_key))
+        self.done_sids[sid] = True
         self.component.send(utils.tostring(iq))
 
     # ---- administration ----
