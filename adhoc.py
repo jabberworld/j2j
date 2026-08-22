@@ -351,7 +351,15 @@ class AdHoc:
         if rfr_submitted is not None:
             self.component.db.setRemoveFromGuestRoster(
                 uid, utils.strToBool(rfr_submitted))
-        utils.createNote(command, "info", i18n.t(lang, note_key))
+        if note_key in ("note_account_disabled", "note_account_enabled"):
+            form = utils.createForm(command, "result")
+            title = ("opts_account_disabled_title"
+                     if note_key == "note_account_disabled"
+                     else "opts_account_enabled_title")
+            utils.addTitle(form, i18n.t(lang, title))
+            utils.addLabel(form, i18n.t(lang, note_key))
+        else:
+            utils.createNote(command, "info", i18n.t(lang, note_key))
         self.done_sids[sid] = True
         self.component.send(utils.tostring(iq))
 

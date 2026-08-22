@@ -85,6 +85,8 @@ STRINGS = {
         'note_account_disabled':
             'Account suspended. Use the same checkbox to re-enable.',
         'note_account_enabled': 'Account re-enabled.',
+        'opts_account_disabled_title': 'Account disabled',
+        'opts_account_enabled_title': 'Account enabled',
         'msg_suspended':
             'Your account on this transport is suspended. Open the '
             'transport settings (ad-hoc command "Options") to '
@@ -184,6 +186,8 @@ STRINGS = {
             'Учётная запись отключена. Тот же переключатель '
             'вернёт её в работу.',
         'note_account_enabled': 'Учётная запись снова включена.',
+        'opts_account_disabled_title': 'Учётная запись отключена',
+        'opts_account_enabled_title': 'Учётная запись включена',
         'msg_suspended':
             'Ваша учётная запись на этом транспорте отключена. '
             'Откройте настройки транспорта (ad-hoc-команда '
@@ -283,6 +287,8 @@ STRINGS = {
             'Обліковий запис вимкнено. Той самий перемикач '
             'поверне його в роботу.',
         'note_account_enabled': 'Обліковий запис знову увімкнено.',
+        'opts_account_disabled_title': 'Обліковий запис вимкнено',
+        'opts_account_enabled_title': 'Обліковий запис увімкнено',
         'msg_suspended':
             "Ваш обліковий запис на цьому транспорті вимкнено. "
             "Відкрийте налаштування транспорту (ad-hoc-команда "
