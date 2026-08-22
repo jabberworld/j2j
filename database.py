@@ -32,7 +32,8 @@ class Database:
             " password TEXT,"
             " port INTEGER,"
             " import_roster INTEGER DEFAULT 0,"
-            " remove_from_guest_roster INTEGER DEFAULT 0)")
+            " remove_from_guest_roster INTEGER DEFAULT 0,"
+            " import_group TEXT)")
         self.execute(
             "CREATE TABLE IF NOT EXISTS rosters ("
             " user_id INTEGER,"
@@ -67,6 +68,11 @@ class Database:
             self.execute(
                 "ALTER TABLE users_options ADD COLUMN "
                 "disabled INTEGER DEFAULT 0")
+        ucols = [row[1] for row in
+                 self.fetchall("PRAGMA table_info(users)")]
+        if 'import_group' not in ucols:
+            self.execute(
+                "ALTER TABLE users ADD COLUMN import_group TEXT")
         self.commit()
 
     def execute(self, query, params=()):
@@ -103,7 +109,7 @@ class Database:
         return self.fetchone(
             "SELECT username,password,domain,"
             "server,port,import_roster,"
-            "remove_from_guest_roster FROM "
+            "remove_from_guest_roster,import_group FROM "
             "users WHERE id=?", (uid,))
 
     def getOptsById(self, uid):

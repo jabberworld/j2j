@@ -46,6 +46,21 @@ class Config:
             raise ValueError(
                 "Invalid [general] default_language %r: must be one "
                 "of %s" % (raw_lang, ", ".join(i18n.LANGUAGES)))
+        # Default roster import mechanism preselected in the
+        # registration form: off / subscribe / rosterx / auto.
+        # "auto" probes the client for XEP-0144 roster item exchange
+        # support and offers it when announced, otherwise no import.
+        raw_mode = get("general", "import_mode", default="auto").strip()
+        modes = ("off", "subscribe", "rosterx", "auto")
+        if raw_mode.lower() not in modes:
+            raise ValueError(
+                "Invalid [general] import_mode %r: must be one of %s"
+                % (raw_mode, ", ".join(modes)))
+        self.IMPORT_MODE = raw_mode.lower()
+        # Roster group offered to users for imported contacts
+        # (pre-filled, still editable per user in the form).
+        self.ROSTER_GROUP_NAME = get("general", "roster_group_name",
+                                     default="Контакты j2j").strip()
         self.JID = get("component", "JID", required=True)
         self.HOST = get("component", "Host", required=True)
         self.PORT = int(get("component", "Port", required=True))
@@ -84,42 +99,69 @@ class Config:
 
     def setDefaultLanguage(self, lang):
         """Change the transport-wide default language: update the
-        in-memory value and persist it to the config file by replacing
-        only the default_language line (all other lines, comments
-        included, are preserved)."""
+        in-memory value and persist it to the config file."""
         lang = i18n.normalize(lang)
         self.DEFAULT_LANGUAGE = lang
+        return self._persistOption("default_language", lang)
+
+    def setImportMode(self, mode):
+        """Change the default roster import mechanism; *mode* is one
+        of off / subscribe / rosterx / auto."""
+        modes = ("off", "subscribe", "rosterx", "auto")
+        if mode not in modes:
+            raise ValueError(
+                "Invalid import_mode %r: must be one of %s"
+                % (mode, ", ".join(modes)))
+        self.IMPORT_MODE = mode
+        return self._persistOption("import_mode", mode)
+
+    def setRosterGroupName(self, name):
+        """Change the default roster group name for imported
+        contacts."""
+        self.ROSTER_GROUP_NAME = name.strip()
+        if not self.ROSTER_GROUP_NAME:
+            self.ROSTER_GROUP_NAME = "Контакты j2j"
+        return self._persistOption("roster_group_name",
+                                   self.ROSTER_GROUP_NAME)
+
+    def _persistOption(self, option, value, section="general"):
+        """Persist a single option to the config file by replacing
+        only its line (all other lines, comments included, are
+        preserved). Returns False when the config file path is
+        unknown."""
         if not self.config_file:
             return False
         with open(self.config_file, encoding='utf-8') as f:
             lines = f.readlines()
-        option_re = re.compile(r'(?i)^(\s*)default_language\s*[=:].*$')
+        option_re = re.compile(
+            r'(?i)^(\s*)%s\s*[=:].*$' % re.escape(option))
         out = []
         done = False
-        in_general = False
-        general_at = None
+        in_section = False
+        section_at = None
+        header = "[%s]" % section
         for line in lines:
             stripped = line.strip()
             if stripped.startswith('[') and stripped.endswith(']'):
-                in_general = stripped.lower() == '[general]'
-                if in_general:
-                    general_at = len(out)
-            if in_general and not done and \
+                in_section = stripped.lower() == header.lower()
+                if in_section:
+                    section_at = len(out)
+            if in_section and not done and \
                option_re.match(line.rstrip('\n')):
-                out.append('default_language=%s\n' % lang)
+                out.append('%s=%s\n' % (option, value))
                 done = True
                 continue
             out.append(line)
         if not done:
-            if general_at is not None:
-                # [general] exists without the option: insert right
+            if section_at is not None:
+                # Section exists without the option: insert right
                 # after the section header.
-                out.insert(general_at + 1, 'default_language=%s\n' % lang)
+                out.insert(section_at + 1, '%s=%s\n' % (option, value))
             else:
                 if out and not out[-1].endswith('\n'):
                     out[-1] += '\n'
-                out += ['\n', '[general]\n',
-                        'default_language=%s\n' % lang]
+                out += ['\n', '%s\n' % header, '%s=%s\n'
+                        % (option, value)]
         with open(self.config_file, 'w', encoding='utf-8') as f:
             f.writelines(out)
         return True

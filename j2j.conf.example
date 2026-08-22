@@ -8,6 +8,16 @@
 ; via the ad-hoc "Options" command. Supported: en, ru, uk
 default_language=en
 
+; Default roster import mechanism preselected in the registration
+; form: off / subscribe / rosterx / auto.
+; "auto" probes the client for XEP-0144 roster item exchange support
+; and offers it when announced, otherwise offers no import.
+import_mode=auto
+
+; Roster group name offered for imported contacts (users can change
+; it for themselves in the registration form)
+roster_group_name=Контакты j2j
+
 [component]
 
 ; JID of the transport service itself (as registered on the server)

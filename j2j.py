@@ -7,6 +7,7 @@ import copy
 import hashlib
 import platform
 import time
+import uuid
 
 import slixmpp
 from slixmpp import ComponentXMPP
@@ -35,6 +36,10 @@ class J2JComponent(ComponentXMPP):
         self.shuttingDown = False
         self.restartRequested = False
         self.startTime = 0
+        # Pending disco#info probes (iq id -> callback) and the
+        # per-resource XEP-0144 support cache built from them.
+        self.pending_disco = {}
+        self.rosterx_support = {}
         self.debug = debug.Debug(
             config.LOGFILE,
             config.DEBUG_REGISTRATIONS,
@@ -288,7 +293,7 @@ class J2JComponent(ComponentXMPP):
                     "status_logging_in"))
             self.clients[fro.full] = GuestClient(
                 uid, el, self, fro, clientJid, data[3], data[1],
-                data[4], data[5], data[6])
+                data[4], data[5], data[6], data[7])
         elif fro.full in self.clients and presenceType == "unavailable":
             if self.clients[fro.full].connected:
                 self.debug.loginsLog(
@@ -341,6 +346,11 @@ class J2JComponent(ComponentXMPP):
         self.sendError(el, etype="cancel", condition="service-unavailable")
 
     def componentIq(self, el, fro, ID, iqType):
+        # Replies to our disco#info probes are matched by id: error
+        # replies may not carry a disco-namespaced child at all.
+        if ID in self.pending_disco and iqType in ("result", "error"):
+            self.resultDiscoInfo(el, fro, ID)
+            return
         for query in el.xml:
             xmlns = utils.nsname(query)
             node = query.get("node")
@@ -404,6 +414,53 @@ class J2JComponent(ComponentXMPP):
         xml.set("type", "set")
         self.clients[entry[0].full].send(utils.tostring(xml))
 
+    # ---- XEP-0144 support probing ----
+
+    def probeRosterxSupport(self, full_jid, callback):
+        """Ask *full_jid* for disco#info and invoke
+        callback(supported) telling whether it announces the
+        'http://jabber.org/protocol/rosterx' feature (XEP-0144).
+        Results are cached per full JID; an error reply or a timeout
+        counts as unsupported."""
+        supported = self.rosterx_support.get(full_jid)
+        if supported is not None:
+            callback(supported)
+            return
+        iq_id = uuid.uuid4().hex
+        iq = utils.addsub(None, "iq", utils.COMPONENT_NS)
+        iq.set("type", "get")
+        iq.set("to", str(full_jid))
+        iq.set("from", self.cJid)
+        iq.set("id", iq_id)
+        utils.addsub(iq, "query", utils.DISCO_INFO_NS)
+        self.pending_disco[iq_id] = callback
+
+        def on_timeout():
+            cb = self.pending_disco.pop(iq_id, None)
+            if cb is not None:
+                self.debug.logger.debug(
+                    "disco#info probe to %s timed out" % full_jid)
+                self.rosterx_support[str(full_jid)] = False
+                cb(False)
+
+        try:
+            self.loop.call_later(3, on_timeout)
+        except (AttributeError, RuntimeError):
+            on_timeout()
+        self.send(utils.tostring(iq))
+
+    def resultDiscoInfo(self, el, fro, ID):
+        cb = self.pending_disco.pop(ID, None)
+        if cb is None:
+            return
+        supported = False
+        for feature in el.xml.iter():
+            if feature.get("var") == "http://jabber.org/protocol/rosterx":
+                supported = True
+                break
+        self.rosterx_support[str(fro)] = supported
+        cb(supported)
+
     def getStats(self, el, fro, ID):
         iq = self._newResultIq(fro, ID)
         query = utils.addsub(iq, "query", utils.STATS_NS)
@@ -463,11 +520,24 @@ class J2JComponent(ComponentXMPP):
         uid = self.db.getIdByJid(fro.bare)
         if uid:
             return uid, self.db.getDataById(uid)
-        return None, [None, None, None, None, 5222, False, False]
+        return None, [None, None, None, None, 5222, False, False, None]
 
-    def buildRegisterForm(self, parent, lang, uid, data):
+    @staticmethod
+    def defaultImportMode(config, rosterx_supported):
+        """Registration-form preselection: an explicit [general]
+        import_mode wins; "auto" offers XEP-0144 roster item exchange
+        when the client announces support and otherwise offers no
+        import."""
+        if config.IMPORT_MODE == "auto":
+            return 2 if rosterx_supported else 0
+        return {"off": 0, "subscribe": 1, "rosterx": 2}[config.IMPORT_MODE]
+
+    def buildRegisterForm(self, parent, lang, uid, data,
+                          mode_default=None):
         """Attach the jabber:x:data registration dialog to *parent*
-        (either an iq:register <query/> or an ad-hoc <command/>)."""
+        (either an iq:register <query/> or an ad-hoc <command/>).
+        *mode_default* preselects the roster import mechanism for a
+        fresh registration (edit forms preselect the stored value)."""
         edit = uid is not None
         form = utils.createForm(parent, "form")
         utils.addTitle(form, i18n.t(lang, "reg_title"))
@@ -488,24 +558,45 @@ class J2JComponent(ComponentXMPP):
                          data[3])
         utils.addTextBox(form, "port", i18n.t(lang, "field_port"),
                          str(data[4] if data[4] is not None else 5222))
-        if not edit:
-            utils.addCheckBox(form, "import_roster",
-                              i18n.t(lang, "field_import_roster"),
-                              data[5])
+        modes = [("0", i18n.t(lang, "import_opt_off")),
+                 ("1", i18n.t(lang, "import_opt_subscribe")),
+                 ("2", i18n.t(lang, "import_opt_rosterx"))]
+        mode = data[5] if edit else mode_default
+        utils.addListSingle(form, "import_roster",
+                            i18n.t(lang, "field_import_mode"),
+                            str(mode if mode in (0, 1, 2) else 0),
+                            modes)
+        group = self.config.ROSTER_GROUP_NAME
+        if edit and data[7]:
+            group = data[7]
+        utils.addTextBox(form, "import_group",
+                         i18n.t(lang, "field_import_group"), group)
         utils.addListSingle(form, "language",
                             i18n.t(lang, "field_language"),
                             lang, i18n.options())
         return form
 
     def getRegister(self, el, fro, ID):
-        iq = self._newResultIq(fro, ID)
-        query = utils.addsub(iq, "query", "jabber:iq:register")
         uid, data = self.registerContext(fro)
         lang = self.getUserLang(fro.bare)
+
+        def send_form(rosterx_supported):
+            iq = self._newResultIq(fro, ID)
+            query = utils.addsub(iq, "query", "jabber:iq:register")
+            if uid is not None:
+                utils.addsub(query, "registered", "jabber:iq:register")
+            mode_default = self.defaultImportMode(self.config,
+                                                  rosterx_supported)
+            self.buildRegisterForm(query, lang, uid, data,
+                                   mode_default=mode_default)
+            self.send(utils.tostring(iq))
+
         if uid is not None:
-            utils.addsub(query, "registered", "jabber:iq:register")
-        self.buildRegisterForm(query, lang, uid, data)
-        self.send(utils.tostring(iq))
+            # Editing an existing registration: no probe needed, the
+            # stored mechanism is preselected.
+            send_form(False)
+        else:
+            self.probeRosterxSupport(fro.full, send_form)
 
     def submitRegistration(self, el, fro):
         """Validate and apply a submitted registration x:data form
@@ -532,8 +623,16 @@ class J2JComponent(ComponentXMPP):
             port = int(port)
         except (ValueError, TypeError):
             port = 5222
-        import_roster = utils.strToBool(
-            utils.xdataValue(el, 'import_roster'))
+        import_roster = (utils.xdataValue(el, 'import_roster') or
+                         '').strip()
+        if import_roster == '2':
+            import_roster = 2
+        elif import_roster in ('1', 'true'):
+            import_roster = 1
+        else:
+            import_roster = 0
+        import_group = (utils.xdataValue(el, 'import_group') or
+                        '').strip()[:128] or None
         lang_submitted = (utils.xdataValue(el, 'language') or '').strip()
         language = i18n.normalize(lang_submitted) if lang_submitted \
             else None
@@ -545,10 +644,10 @@ class J2JComponent(ComponentXMPP):
             self.db.execute(
                 "INSERT INTO users "
                 "(jid,username,domain,server,password,port,"
-                "import_roster) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "import_roster,import_group) "
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (fro.bare, username, domain, server, password,
-                 port, int(import_roster)))
+                 port, int(import_roster), import_group))
             uid = self.db.getIdByJid(fro.bare)
             self.db.execute(
                 "INSERT INTO users_options (user_id,language) "
@@ -589,8 +688,15 @@ class J2JComponent(ComponentXMPP):
             "UPDATE users SET username=?,domain=?,server=?,"
             "password=?,port=? WHERE id=?",
             (username, domain, server, password, port, str(uid)))
-        # Only touch the stored language when the form actually
-        # carried the field (older cached forms may omit it).
+        # Only touch import mechanism/group/language when the form
+        # actually carried the fields (older cached forms may omit
+        # them).
+        mode_submitted = utils.xdataValue(el, 'import_roster')
+        if mode_submitted is not None:
+            self.db.execute(
+                "UPDATE users SET import_roster=?,import_group=? "
+                "WHERE id=?",
+                (int(import_roster), import_group, str(uid)))
         if lang_submitted:
             self.db.setLangById(uid, language)
         self.db.commit()

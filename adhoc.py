@@ -10,7 +10,15 @@ import utils
 
 class AdHoc:
     # Menu entries of the administration command, in display order.
-    ADMIN_ACTIONS = ("setlang", "restart", "stop", "announce")
+    ADMIN_ACTIONS = ("setlang", "setmode", "setgroup",
+                     "restart", "stop", "announce")
+
+    # Roster import mechanisms offered to the admin (config values).
+    IMPORT_MODES = ("off", "subscribe", "rosterx", "auto")
+    MODE_KEYS = {"off": "import_opt_off",
+                 "subscribe": "import_opt_subscribe",
+                 "rosterx": "import_opt_rosterx",
+                 "auto": "import_opt_auto"}
 
     def __init__(self, component):
         # Each entry: [i18n key, stage-1 handler, stage-2 handler,
@@ -107,10 +115,21 @@ class AdHoc:
     def getRegisterAdhoc(self, iq, fro, ID):
         lang = self.component.getUserLang(fro.bare)
         uid, data = self.component.registerContext(fro)
-        command = utils.createCommand(iq, "register", "executing",
-                                      self.getSid())
-        self.component.buildRegisterForm(command, lang, uid, data)
-        self.component.send(utils.tostring(iq))
+
+        def send_form(rosterx_supported):
+            command = utils.createCommand(iq, "register",
+                                          "executing", self.getSid())
+            mode_default = \
+                self.component.defaultImportMode(self.component.config,
+                                                 rosterx_supported)
+            self.component.buildRegisterForm(command, lang, uid, data,
+                                             mode_default=mode_default)
+            self.component.send(utils.tostring(iq))
+
+        if uid is not None:
+            send_form(False)
+        else:
+            self.component.probeRosterxSupport(fro.full, send_form)
 
     def setRegisterAdhoc(self, el, iq, sid, fro, ID):
         lang = self.component.getUserLang(fro.bare)
@@ -311,6 +330,10 @@ class AdHoc:
         action = utils.xdataValue(el, 'action')
         if action == "setlang":
             self.adminSetLang(el, iq, sid, fro, lang)
+        elif action == "setmode":
+            self.adminSetMode(el, iq, sid, fro, lang)
+        elif action == "setgroup":
+            self.adminSetGroup(el, iq, sid, fro, lang)
         elif action in ("restart", "stop"):
             self.adminPower(action, el, iq, sid, fro, lang)
         elif action == "announce":
@@ -345,6 +368,62 @@ class AdHoc:
             self.component.debug.logger.warning(
                 "Config file path unknown; default language %r "
                 "applied in memory only", i18n.normalize(chosen))
+
+    def adminSetMode(self, el, iq, sid, fro, lang):
+        chosen = (utils.xdataValue(el, 'import_mode') or
+                  '').strip().lower()
+        if chosen not in self.IMPORT_MODES:
+            command = utils.createCommand(iq, "admin", "executing",
+                                          sid)
+            form = utils.createForm(command, "form")
+            utils.addTitle(form, i18n.t(lang, "admin_act_setmode"))
+            modes = [(mode,
+                      i18n.t(lang, self.MODE_KEYS[mode]))
+                     for mode in self.IMPORT_MODES]
+            utils.addListSingle(form, "import_mode",
+                                i18n.t(lang, "field_import_mode"),
+                                self.component.config.IMPORT_MODE,
+                                modes)
+            utils.addHidden(form, "action", "setmode")
+            self.component.send(utils.tostring(iq))
+            return
+        changed = self.component.config.setImportMode(chosen)
+        command = utils.createCommand(iq, "admin", "completed", sid)
+        form = utils.createForm(command, "result")
+        utils.addTitle(form, i18n.t(lang, "admin_act_setmode"))
+        utils.addLabel(form, i18n.t(lang, "note_setmode_done") % chosen)
+        self.component.send(utils.tostring(iq))
+        if not changed:
+            self.component.debug.logger.warning(
+                "Config file path unknown; import mode %r "
+                "applied in memory only", chosen)
+
+    def adminSetGroup(self, el, iq, sid, fro, lang):
+        chosen = (utils.xdataValue(el, 'import_group') or '').strip()
+        if not chosen:
+            command = utils.createCommand(iq, "admin", "executing",
+                                          sid)
+            form = utils.createForm(command, "form")
+            utils.addTitle(form, i18n.t(lang, "admin_act_setgroup"))
+            utils.addTextBox(
+                form, "import_group",
+                i18n.t(lang, "field_import_group"),
+                self.component.config.ROSTER_GROUP_NAME)
+            utils.addHidden(form, "action", "setgroup")
+            self.component.send(utils.tostring(iq))
+            return
+        changed = self.component.config.setRosterGroupName(chosen)
+        command = utils.createCommand(iq, "admin", "completed", sid)
+        form = utils.createForm(command, "result")
+        utils.addTitle(form, i18n.t(lang, "admin_act_setgroup"))
+        utils.addLabel(form, i18n.t(lang, "note_setgroup_done") %
+                       self.component.config.ROSTER_GROUP_NAME)
+        self.component.send(utils.tostring(iq))
+        if not changed:
+            self.component.debug.logger.warning(
+                "Config file path unknown; roster group name %r "
+                "applied in memory only",
+                self.component.config.ROSTER_GROUP_NAME)
 
     def adminPower(self, action, el, iq, sid, fro, lang):
         act_key = "admin_act_" + action

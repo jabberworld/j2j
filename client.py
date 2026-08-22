@@ -5,7 +5,7 @@
 
 import copy
 import socket
-import time
+import uuid
 
 from slixmpp import ClientXMPP
 from slixmpp.jid import InvalidJID, JID
@@ -16,12 +16,37 @@ from slixmpp.xmlstream.handler import Callback
 import utils
 from roster import Roster
 
+
+def build_roster_exchange(from_jid, to_jid, items, group):
+    """XEP-0144 roster item exchange stanza (the iq-set variant used
+    by legacy transports): *items* is an iterable of (jid, name)
+    pairs; all items are offered for addition into *group*."""
+    iq = utils.addsub(None, "iq", utils.COMPONENT_NS)
+    iq.set("type", "set")
+    iq.set("to", str(to_jid))
+    iq.set("from", str(from_jid))
+    iq.set("id", uuid.uuid4().hex)
+    x = utils.addsub(iq, "x", "http://jabber.org/protocol/rosterx")
+    for jid, name in items:
+        item = utils.addsub(x, "item",
+                            "http://jabber.org/protocol/rosterx")
+        item.set("action", "add")
+        item.set("jid", str(jid))
+        if name:
+            item.set("name", name)
+        if group:
+            g = utils.addsub(item, "group",
+                             "http://jabber.org/protocol/rosterx")
+            g.text = group
+    return iq
+
 class GuestClient(ClientXMPP):
     PING_INTERVAL = 60
 
     def __init__(self, uid, el, component, host_jid, client_jid,
                  server, secret, port=5222, import_roster=False,
-                 remove_from_roster=False, test_mode=False):
+                 remove_from_roster=False, import_group=None,
+                 test_mode=False):
         ClientXMPP.__init__(self, client_jid.full, secret)
 
         self.uid = uid
@@ -41,6 +66,7 @@ class GuestClient(ClientXMPP):
         self.port = port
         self.import_roster = import_roster
         self.remove_from_roster = remove_from_roster
+        self.import_group = import_group
         self.client_jid = client_jid
         self.need_disconnect = False
         self.error = None
@@ -191,7 +217,7 @@ class GuestClient(ClientXMPP):
 
         db = self.component.db
         uid = db.getIdByJid(self.host_jid.bare)
-        if uid and self.import_roster:
+        if uid and self.import_roster in (1, 2):
             dbroster = [str(jid) for jid, in
                         db.fetchall("SELECT jid FROM rosters WHERE user_id=?", (uid,))]
             presence = self.component.make_presence(
@@ -204,20 +230,45 @@ class GuestClient(ClientXMPP):
                     presence.send()
                     presence['type'] = 'unsubscribe'
                     db.execute("DELETE FROM rosters WHERE user_id=? AND jid=?", (uid, jid))
-            for jid in self.guest_roster.items:
-                if not jid in dbroster:
-                    presence = self.component.make_presence(
-                        ptype='subscribe', pto=self.host_jid.bare)
-                    presence['from'] = self.component.quoteJID(jid)
-                    if self.guest_roster.items[jid][0]:
-                        utils.addsub(
-                            presence.xml, 'nick',
-                            'http://jabber.org/protocol/nick',
-                            text=self.guest_roster.items[jid][0])
-                    presence.send()
-                    db.execute("INSERT INTO rosters (user_id,jid) VALUES (?,?)",
-                               (str(uid), jid))
+            missing = [(jid, info)
+                       for jid, info in
+                       sorted(self.guest_roster.items.items())
+                       if str(jid) not in dbroster]
+            if not missing:
+                return
+            if self.import_roster == 1:
+                self._importViaSubscriptions(missing)
+            else:
+                self._importViaRosterExchange(missing)
+            for jid, _info in missing:
+                db.execute(
+                    "INSERT INTO rosters (user_id,jid) VALUES (?,?)",
+                    (str(uid), jid))
             db.commit()
+
+    def _importViaSubscriptions(self, missing):
+        """Legacy mechanism: one stanza-level subscribe per guest
+        contact, sent on the contact's behalf to the host account."""
+        for jid, info in missing:
+            presence = self.component.make_presence(
+                ptype='subscribe', pto=self.host_jid.bare)
+            presence['from'] = self.component.quoteJID(jid)
+            if info[0]:
+                utils.addsub(
+                    presence.xml, 'nick',
+                    'http://jabber.org/protocol/nick',
+                    text=info[0])
+            presence.send()
+
+    def _importViaRosterExchange(self, missing):
+        """XEP-0144: a single roster item exchange stanza offering
+        all new contacts at once, grouped as requested."""
+        group = self.import_group or \
+            self.component.config.ROSTER_GROUP_NAME
+        items = [(jid, info[0]) for jid, info in missing]
+        iq = build_roster_exchange(self.component.cJid,
+                                   self.host_jid.full, items, group)
+        self.component.send(utils.tostring(iq))
 
     # ---- stanzas ----
 
