@@ -192,6 +192,27 @@ class AdHoc:
         self.component.send(utils.tostring(vex))
         self.vCardSids[sid] = (fro, ID)
 
+    def finishReplica(self, fro, ID, sid, success):
+        """Send the final ad-hoc "completed" reply for the vCard
+        replication command once the remote server answers (or errors).
+        Without this the command form stays in the 'executing' state."""
+        lang = self.component.getUserLang(fro.bare)
+        iq = utils.addsub(None, "iq", utils.COMPONENT_NS)
+        iq.set("to", fro.full)
+        iq.set("from", self.component.cJid)
+        iq.set("id", ID)
+        iq.set("type", "result")
+        command = utils.createCommand(iq, "replicate_vCard",
+                                       "completed", sid)
+        form = utils.createForm(command, "result")
+        if success:
+            utils.addTitle(form, i18n.t(lang, "replica_done_title"))
+            utils.addLabel(form, i18n.t(lang, "replica_done"))
+        else:
+            utils.addTitle(form, i18n.t(lang, "replica_err_title"))
+            utils.addLabel(form, i18n.t(lang, "replica_error"))
+        self.component.send(utils.tostring(iq))
+
     # ---- statistics ----
 
     def getStat(self, iq, fro, ID):

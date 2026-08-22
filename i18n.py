@@ -66,6 +66,9 @@ STRINGS = {
         'replica_yes': 'Yes, do it',
         'replica_cancel_title': 'Execution canceled',
         'replica_cancelled': 'Replication cancelled',
+        'replica_done_title': 'vCard replicated',
+        'replica_done': 'Your vCard has been copied to the transport.',
+        'replica_error': 'Failed to retrieve vCard from the server.',
         # ad-hoc: options
         'opts_title': 'J2J Options and Settings',
         'opts_only_roster':
@@ -160,6 +163,9 @@ STRINGS = {
         'replica_yes': 'Да, выполнить',
         'replica_cancel_title': 'Выполнение отменено',
         'replica_cancelled': 'Копирование отменено',
+        'replica_done_title': 'vCard скопирована',
+        'replica_done': 'Ваша vCard скопирована в транспорт.',
+        'replica_error': 'Не удалось получить vCard с сервера.',
         'opts_title': 'Параметры и настройки J2J',
         'opts_only_roster':
             'Получать сообщения только от контактов '
@@ -256,6 +262,9 @@ STRINGS = {
         'replica_yes': 'Так, виконати',
         'replica_cancel_title': 'Виконання скасовано',
         'replica_cancelled': 'Копіювання скасовано',
+        'replica_done_title': 'vCard скопійовано',
+        'replica_done': 'Ваша vCard скопійовано у транспорт.',
+        'replica_error': 'Не вдалося отримати vCard з сервера.',
         'opts_title': 'Параметри та налаштування J2J',
         'opts_only_roster':
             'Отримувати повідомлення лише від контактів '
