@@ -33,6 +33,9 @@ class AdHoc:
             "replicate_vCard":
                 ["cmd_replicate_vcard", self.getReplica,
                  self.setReplica, True, False],
+            "delete_account":
+                ["cmd_delete_account", self.getDeleteAccount,
+                 self.setDeleteAccount, True, False],
             "admin": ["cmd_admin", self.getAdmin, self.setAdmin,
                       False, True]}
         self.sid = 0
@@ -68,9 +71,12 @@ class AdHoc:
                 continue
             if cmd[3] and not registered:
                 continue
+            label = cmd[0]
+            if commandNode == "register" and registered:
+                label = "cmd_register_edit"
             utils.addDiscoItem(query,
                                self.component.cJid,
-                               i18n.t(lang, cmd[0]),
+                               i18n.t(lang, label),
                                commandNode)
 
     def onCommand(self, el, fro, ID, node):
@@ -125,6 +131,32 @@ class AdHoc:
             return None, None
 
         return "cancel", "bad-request"
+
+    # ---- account deletion ----
+
+    def getDeleteAccount(self, iq, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
+        command = utils.createCommand(iq, "delete_account", "executing",
+                                      self.getSid())
+        form = utils.createForm(command, "form")
+        utils.addTitle(form, i18n.t(lang, "del_account_title"))
+        utils.addLabel(form, i18n.t(lang, "del_account_warn"))
+        utils.addCheckBox(form, "confirm",
+                          i18n.t(lang, "del_account_confirm"), False)
+        self.component.send(utils.tostring(iq))
+
+    def setDeleteAccount(self, el, iq, sid, fro, ID):
+        lang = self.component.getUserLang(fro.bare)
+        command = utils.createCommand(iq, "delete_account", "completed", sid)
+        confirm = utils.xdataValue(el, 'confirm')
+        if confirm and utils.strToBool(confirm):
+            self.component.deleteAccount(fro)
+            utils.createNote(command, "info",
+                             i18n.t(lang, "note_account_deleted"))
+        else:
+            utils.createNote(command, "info",
+                             i18n.t(lang, "note_account_not_deleted"))
+        self.component.send(utils.tostring(iq))
 
     # ---- registration ----
 
@@ -274,6 +306,11 @@ class AdHoc:
                                       self.getSid())
         form = utils.createForm(command, "form")
         utils.addTitle(form, i18n.t(lang, "opts_title"))
+        # Inverted semantics: the checkbox enables the account, so the
+        # stored "disabled" flag is shown negated. Kept first in the form.
+        utils.addCheckBox(form, "enableAccount",
+                          i18n.t(lang, "opts_enable_account"),
+                          not bool(opts[5]))
         utils.addCheckBox(form, "onlyRoster",
                           i18n.t(lang, "opts_only_roster"), opts[2])
         utils.addLabel(form, i18n.t(lang, "opts_autoreply_header"))
@@ -288,12 +325,22 @@ class AdHoc:
         utils.addListSingle(form, "language",
                             i18n.t(lang, "field_language"),
                             lang, i18n.options())
-        utils.addCheckBox(form, "disableAccount",
-                          i18n.t(lang, "opts_disable_account"),
-                          bool(opts[5]))
+        utils.addLabel(form, i18n.t(lang, "opts_relay_header"))
         utils.addCheckBox(form, "remove_from_roster",
                           i18n.t(lang, "field_remove_from_roster"),
                           bool(opts[6]))
+        utils.addCheckBox(form, "rosterSync",
+                          i18n.t(lang, "opts_rostersync"),
+                          bool(opts[10]))
+        utils.addCheckBox(form, "notify_typing",
+                          i18n.t(lang, "opts_typing"),
+                          bool(opts[7]))
+        utils.addCheckBox(form, "notify_activity",
+                          i18n.t(lang, "opts_chatstates"),
+                          bool(opts[8]))
+        utils.addCheckBox(form, "notify_receipts",
+                          i18n.t(lang, "opts_receipts"),
+                          bool(opts[9]))
         self.component.send(utils.tostring(iq))
 
     def setOpts(self, el, iq, sid, fro, ID):
@@ -322,17 +369,35 @@ class AdHoc:
         lang_submitted = (utils.xdataValue(el, 'language') or '').strip()
         if lang_submitted:
             opts[4] = i18n.normalize(lang_submitted)
+        nt = utils.xdataValue(el, 'notify_typing')
+        if nt is not None:
+            opts[7] = utils.strToBool(nt)
+        na = utils.xdataValue(el, 'notify_activity')
+        if na is not None:
+            opts[8] = utils.strToBool(na)
+        nr = utils.xdataValue(el, 'notify_receipts')
+        if nr is not None:
+            opts[9] = utils.strToBool(nr)
+        rs = utils.xdataValue(el, 'rosterSync')
+        if rs is not None:
+            opts[10] = utils.strToBool(rs)
         self.component.db.execute(
             "UPDATE users_options SET onlyroster=?,"
             "autoreplyenabled=?,autoreplybutforward=?,replytext=?,"
-            "language=? WHERE user_id=?",
+            "language=?,notify_typing=?,notify_activity=?,"
+            "notify_receipts=?,rostersync=? WHERE user_id=?",
             (int(opts[2]), int(opts[3]), int(opts[1]), opts[0],
-             opts[4], str(uid)))
+             opts[4], int(opts[7]), int(opts[8]), int(opts[9]),
+             int(opts[10]), str(uid)))
         self.component.db.commit()
         note_key = "note_options_updated"
-        disabled_submitted = utils.xdataValue(el, 'disableAccount')
-        if disabled_submitted:
-            want_disabled = utils.strToBool(disabled_submitted)
+        # Inverted semantics: the checkbox enables the account; a stale
+        # cached form still carrying the old "disableAccount" field is
+        # safely ignored because of the new variable name.
+        enabled_submitted = utils.xdataValue(el, 'enableAccount')
+        if enabled_submitted:
+            want_enabled = utils.strToBool(enabled_submitted)
+            want_disabled = not want_enabled
             if bool(opts[5]) != want_disabled:
                 self.component.db.setDisabled(uid, want_disabled)
                 if want_disabled:

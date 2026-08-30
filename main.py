@@ -13,6 +13,7 @@ import signal
 import sys
 
 from config import Config
+import database
 import j2j
 
 def daemonize():
@@ -29,6 +30,13 @@ def daemonize():
     os.dup2(devnull, 1)
     os.dup2(devnull, 2)
 
+def _removePidFile(config):
+    if config.PROCESS_PID and os.path.exists(config.PROCESS_PID):
+        try:
+            os.unlink(config.PROCESS_PID)
+        except OSError:
+            pass
+
 def main():
     parser = argparse.ArgumentParser(
         prog='j2j',
@@ -41,7 +49,7 @@ def main():
                         action="store_true")
     options = parser.parse_args()
 
-    version = "2.2.5"
+    version = "2.5.1"
 
     if options.configFile:
         config = Config(options.configFile)
@@ -55,7 +63,14 @@ def main():
         with open(config.PROCESS_PID, "w") as pidfile:
             pidfile.write("%s\n" % os.getpid())
 
-    c = j2j.J2JComponent(version, config, config.JID)
+    try:
+        c = j2j.J2JComponent(version, config, config.JID)
+    except database.StartupError as e:
+        # Known configuration problem (e.g. missing/wrong master
+        # password): a short message is enough.
+        print("Cannot start: %s" % e, file=sys.stderr)
+        _removePidFile(config)
+        sys.exit(1)
     c.connect()
     loop = c.loop
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -71,11 +86,7 @@ def main():
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     # Regular exit: clean up the pidfile.
-    if config.PROCESS_PID and os.path.exists(config.PROCESS_PID):
-        try:
-            os.unlink(config.PROCESS_PID)
-        except OSError:
-            pass
+    _removePidFile(config)
 
 if __name__ == "__main__":
     main()

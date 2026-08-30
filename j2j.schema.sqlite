@@ -7,10 +7,17 @@ CREATE TABLE users (
     username TEXT,
     domain TEXT,
     server TEXT,
+    -- plaintext, or "enc1:<Fernet token>" when [database]
+    -- master_password is configured (see dbcrypto.py)
     password TEXT,
     port INTEGER,
     import_roster INTEGER DEFAULT 0,
     remove_from_guest_roster INTEGER DEFAULT 0
+);
+
+CREATE TABLE crypto_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
 );
 
 CREATE TABLE rosters (
@@ -27,7 +34,8 @@ CREATE TABLE users_options (
     autoreplybutforward INTEGER DEFAULT 0,
     onlyroster INTEGER DEFAULT 0,
     autoreplyenabled INTEGER DEFAULT 0,
-    language TEXT
+    language TEXT,
+    rostersync INTEGER DEFAULT 1
 );
 
 CREATE INDEX idx_users_options_user_id ON users_options (user_id);

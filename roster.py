@@ -13,24 +13,36 @@ class Roster:
         self.host = host
         self.items = {}
 
-    def getGroups(self):
+    def getGroups(self, ungrouped="Undefined", exclude=None):
+        """Group names across the roster. Contacts without any group are
+        reported under the single pseudo-group *ungrouped*; bare JIDs in
+        *exclude* (e.g. the guest account itself) are skipped."""
+        skip = exclude or set()
         groups = []
-        alreadyUndefined = False
+        alreadyUngrouped = False
         for contact in self.items.keys():
-            if self.items[contact][2] == [] and not alreadyUndefined:
-                groups.append(u"Undefined")
-                alreadyUndefined = True
+            if contact in skip:
+                continue
+            if self.items[contact][2] == [] and not alreadyUngrouped:
+                groups.append(ungrouped)
+                alreadyUngrouped = True
             else:
                 for group in self.items[contact][2]:
                     if not group in groups:
                         groups.append(group)
         return groups
 
-    def getAllInGroup(self, group):
-        if group == "Undefined":
+    def getAllInGroup(self, group, ungrouped="Undefined", exclude=None):
+        """(jid, name) pairs of every contact in *group*. The pseudo-group
+        name *ungrouped* selects contacts without any group; bare JIDs in
+        *exclude* are skipped."""
+        skip = exclude or set()
+        if group == ungrouped:
             group = None
         all = []
         for contact in self.items.keys():
+            if contact in skip:
+                continue
             if group:
                 if group in self.items[contact][2]:
                     all.append([contact, self.items[contact][0]])

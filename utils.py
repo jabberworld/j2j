@@ -4,6 +4,7 @@
 # Python3 / slixmpp port helpers.
 
 import copy
+import re
 
 XML_NS = 'http://www.w3.org/XML/1998/namespace'
 
@@ -16,6 +17,23 @@ DISCO_INFO_NS = 'http://jabber.org/protocol/disco#info'
 DISCO_ITEMS_NS = 'http://jabber.org/protocol/disco#items'
 STATS_NS = 'http://jabber.org/protocol/stats'
 VCARD_NS = 'vcard-temp'
+CHATSTATES_NS = 'http://jabber.org/protocol/chatstates'
+RECEIPTS_NS = 'urn:xmpp:receipts'
+CARBONS_NS = 'urn:xmpp:carbons:2'
+FORWARD_NS = 'urn:xmpp:forward:0'
+
+_LEGACY_ESCAPES = {
+    '20': ' ',
+    '22': '"',
+    '26': '&',
+    '27': "'",
+    '2f': '/',
+    '3a': ':',
+    '3c': '<',
+    '3e': '>',
+    '40': '@',
+    '5c': '\\',
+}
 
 errorCodeMap = {
     "bad-request": 400,
@@ -87,6 +105,16 @@ def unquoteJID(qjid, cJid):
     ujid = bare.split('@')[0]
     ujid = ujid.replace('%', '@')
     ujid = ujid.replace('\\@', '%')
+    # Legacy (XEP-0106-style) escaping used by the original transport:
+    # \20 space, \26 &, \27 ', \2f /, \3a :, \3c <, \3e >,
+    # \40 @, \5c backslash, \22 ". Decode them so old virtual JIDs
+    # like node\40domain@transport unquote to node@domain. The regex
+    # matches each escape once (no cascading), and unknown sequences
+    # (e.g. the current scheme's \%%) are left untouched.
+    ujid = re.sub(
+        r'\\([0-9a-f]{2})',
+        lambda m: _LEGACY_ESCAPES.get(m.group(1), m.group(0)),
+        ujid)
     if resource:
         ujid = ujid + '/' + resource
     return ujid
@@ -98,6 +126,31 @@ def strToBool(string):
         return False
     return str(string).strip().lower() not in \
         ("", "0", "false", "no", "off")
+
+def enableTcpKeepalive(sock):
+    """Turn on OS-level TCP keepalive with aggressive timers so a
+    silently dead peer (NAT timeout, crashed host -- no RST, no FIN)
+    is detected in ~2 minutes instead of hours. Best effort: missing
+    platform options are simply skipped."""
+    import socket as _socket
+    try:
+        sock.setsockopt(_socket.SOL_SOCKET,
+                        _socket.SO_KEEPALIVE, 1)
+    except OSError:
+        return
+    # Linux tuning; macOS honours TCP_KEEPALIVE, other platforms fall
+    # back to their system defaults.
+    idle = getattr(_socket, "TCP_KEEPIDLE", None)
+    intvl = getattr(_socket, "TCP_KEEPINTVL", None)
+    cnt = getattr(_socket, "TCP_KEEPCNT", None)
+    keepalive = getattr(_socket, "TCP_KEEPALIVE", None)  # macOS
+    for opt, value in ((idle, 60), (intvl, 15), (cnt, 4),
+                       (keepalive, 60)):
+        if opt is not None:
+            try:
+                sock.setsockopt(_socket.IPPROTO_TCP, opt, value)
+            except OSError:
+                pass
 
 def locname(el):
     """Return the local (namespace stripped) name of an XML element."""
@@ -133,7 +186,39 @@ def children(el, name=None):
         if name is None or locname(child) == name:
             yield child
 
-# ---- jabber:x:data form builders (used by the register flow) ----
+    # ---- relay feature filtering (chat states / delivery receipts) ----
+
+def _ns_local(el):
+    """Return (namespace, local-name) for an element tag in Clark notation."""
+    if isinstance(el.tag, str) and el.tag.startswith('{'):
+        ns, local = el.tag[1:].split('}', 1)
+        return ns, local
+    return '', el.tag
+
+
+def strip_relay_features(xml, typing, activity, receipts):
+    """Strip chat-state and delivery-receipt children from *xml* according
+    to the user toggles.
+
+    Per XEP-0085 the chat states are split as requested: 'typing'
+    covers composing/paused, 'activity' covers active/inactive/gone.
+    XEP-0184 delivery receipts (request/received) are gated by
+    *receipts*. Returns True when the message still carries content
+    (a body or any other child) so the caller can drop empty leftovers.
+    """
+    for child in list(xml):
+        ns, local = _ns_local(child)
+        if ns == CHATSTATES_NS:
+            if local in ('composing', 'paused') and not typing:
+                xml.remove(child)
+            elif local in ('active', 'inactive', 'gone') and not activity:
+                xml.remove(child)
+        elif ns == RECEIPTS_NS and not receipts:
+            xml.remove(child)
+    has_body = any(_ns_local(c)[1] == 'body' for c in list(xml))
+    return has_body or len(list(xml)) > 0
+
+    # ---- jabber:x:data form builders (used by the register flow) ----
 
 X_DATA_NS = 'jabber:x:data'
 X_DATA = '{%s}' % X_DATA_NS

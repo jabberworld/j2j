@@ -70,6 +70,10 @@ class Config:
         self.PROCESS_PID = get("process", "Pid")
 
         self.DB_NAME = get("database", "Name", required=True)
+        # Optional master password: when set, guest account passwords
+        # are stored in the database encrypted (see dbcrypto.py).
+        self.MASTER_PASSWORD = get("database", "master_password",
+                                   default="")
 
         self.DEBUG_REGISTRATIONS = getboolean("debug", "registrations",
                                               default=False)

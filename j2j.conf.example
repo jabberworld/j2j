@@ -41,6 +41,11 @@ Pid=/var/run/j2jt/j2jt.pid
 ; Path to the SQLite database file
 Name=/var/lib/j2j/j2j.db
 
+; Optional master password: when set, guest account passwords are
+; stored encrypted (existing plaintext rows are migrated on startup).
+; Keep this file permissions-restrictive: the config value IS the key.
+; master_password=
+
 [admins]
 
 ; Comma-separated list of administrator JIDs
