@@ -181,7 +181,7 @@ class AdHoc:
 
     def setRegisterAdhoc(self, el, iq, sid, fro, ID):
         lang = self.component.getUserLang(fro.bare)
-        ok, _err, created = self.component.submitRegistration(el, fro)
+        ok, err, created = self.component.submitRegistration(el, fro)
         command = utils.createCommand(iq, "register", "completed", sid)
         form = utils.createForm(command, "result")
         utils.addTitle(form, i18n.t(lang, "reg_title"))
@@ -191,8 +191,9 @@ class AdHoc:
                 "note_register_done" if created
                 else "note_register_updated"))
         else:
-            utils.addLabel(form,
-                           i18n.t(lang, "reg_error_invalid_data"))
+            utils.addLabel(form, i18n.t(
+                lang, "reg_error_own_account" if err == "conflict"
+                else "reg_error_invalid_data"))
         self.done_sids[sid] = True
         self.component.send(utils.tostring(iq))
 

@@ -471,6 +471,10 @@ class J2JComponent(ComponentXMPP):
             self.sendError(el, etype="modify",
                            condition="not-acceptable")
             return
+        if str(clientJid.bare).lower() == str(fro.bare).lower():
+            self.sendError(el, etype="modify",
+                           condition="not-acceptable")
+            return
         if data[3] is None or data[3] == '':
             data[3] = data[2]
         self.clients[fro.full] = GuestClient(
@@ -958,6 +962,8 @@ class J2JComponent(ComponentXMPP):
                 raise InvalidJID
         except InvalidJID:
             return False, "jid-malformed", False
+        if str(parsed.bare).lower() == str(fro.bare).lower():
+            return False, "conflict", False
         password = utils.xdataValue(el, 'password')
         if not password or len(password) > 256:
             return False, "not-acceptable", False
@@ -1114,7 +1120,10 @@ class J2JComponent(ComponentXMPP):
             return
         ok, err, _created = self.submitRegistration(el, fro)
         if not ok:
-            self.sendError(el, etype="modify", condition=err)
+            self.sendError(el,
+                           etype="cancel" if err == "conflict"
+                           else "modify",
+                           condition=err)
             return
         self.sendIqResult(fro.full, self.cJid, ID,
                           "jabber:iq:register")

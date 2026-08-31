@@ -278,6 +278,8 @@ class MessageDialogs:
         if step == "jid":
             try: candidate = JID(text); valid = text.count("@") == 1 and bool(candidate.user and candidate.server) and not candidate.resource
             except InvalidJID: valid = False
+            if valid and str(candidate.bare).lower() == str(fro.bare).lower():
+                dialog["step"] = "menu"; self._text(fro, "reg_error_own_account"); self._registrationMenu(fro, dialog); return
             value = text
         elif step == "password": valid = bool(text) and len(text) <= 256 and "\n" not in text and "\r" not in text; value = text
         elif step == "domain":
@@ -308,10 +310,15 @@ class MessageDialogs:
             for name, value in dialog["fields"].items():
                 field = utils.addsub(xdata, "field", utils.X_DATA_NS, {"var": name})
                 utils.addsub(field, "value", utils.X_DATA_NS, text=value)
-        ok, _error, _created = self.component.submitRegistration(query, fro)
+        ok, error, _created = self.component.submitRegistration(query, fro)
         del self.dialogs[fro.bare]
         self.languages.pop(fro.bare, None)
-        self._text(fro, "msg_register_done" if ok else "msg_reg_invalid")
+        if ok:
+            self._text(fro, "msg_register_done")
+        elif error == "conflict":
+            self._text(fro, "reg_error_own_account")
+        else:
+            self._text(fro, "msg_reg_invalid")
         self._menu(fro)
 
     def _languageMenu(self, fro):

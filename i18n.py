@@ -135,6 +135,8 @@ STRINGS = {
         'note_register_done': 'Account registered.',
         'note_register_updated': 'Registration data updated.',
         'reg_error_invalid_data': 'Invalid registration data.',
+        'reg_error_own_account':
+            'You cannot connect your own account as a guest.',
         'msg_welcome': 'Welcome to J2J: Jabber-to-Jabber Transport!\nThe transport connects a guest account to your host account and lets you communicate with the guest\'s contacts as if they were in your Jabber client.',
         'msg_menu_heading': 'Available commands:',
         'msg_menu_guest': 'Available commands:\n1. reg - Register a new account\n2. lang - Choose interface language\n3. help or ? - Show help',
@@ -295,6 +297,8 @@ STRINGS = {
         'note_register_done': 'Учётная запись зарегистрирована.',
         'note_register_updated': 'Данные регистрации обновлены.',
         'reg_error_invalid_data': 'Некорректные данные регистрации.',
+        'reg_error_own_account':
+            'Нельзя подключать собственную учётную запись как гостевую.',
         'msg_welcome': 'Добро пожаловать на J2J: Jabber-to-Jabber Transport!\nТранспорт позволяет подключать к основной учетной записи (хост-аккаунту) гостевой аккаунт и общаться с контактами «гостя» так, как будто он прописан непосредственно в вашем jabber-клиенте.',
         'msg_menu_heading': 'Доступные команды:',
         'msg_menu_guest': 'Доступные команды:\n1. reg - Зарегистрировать новый аккаунт\n2. lang - Выбор языка интерфейса\n3. help или ? - Вывести справку',
@@ -455,6 +459,8 @@ STRINGS = {
         'note_register_done': 'Обліковий запис зареєстровано.',
         'note_register_updated': 'Дані реєстрації оновлено.',
         'reg_error_invalid_data': 'Некоректні дані реєстрації.',
+        'reg_error_own_account':
+            'Не можна підключати власний обліковий запис як гостьовий.',
         'msg_welcome': 'Ласкаво просимо до J2J: Jabber-to-Jabber Transport!\nТранспорт дозволяє підключити гостьовий обліковий запис до основного та спілкуватися з його контактами так, ніби вони додані безпосередньо до вашого Jabber-клієнта.',
         'msg_menu_heading': 'Доступні команди:',
         'msg_menu_guest': 'Доступні команди:\n1. reg - Зареєструвати новий обліковий запис\n2. lang - Вибір мови інтерфейсу\n3. help або ? - Показати довідку',
