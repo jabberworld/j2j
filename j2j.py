@@ -417,12 +417,14 @@ class J2JComponent(ComponentXMPP):
                 return
             self.connectGuestSession(fro, uid, el)
         elif fro.full in self.clients and presenceType == "unavailable":
-            if self.clients[fro.full].connected:
+            cl = self.clients[fro.full]
+            # Explicit logout: never let the guest stream resume on its
+            # own behind the user's back.
+            cl.need_disconnect = True
+            if cl.connected:
                 self.debug.loginsLog(
                     "User %s is trying to log out" % (fro.full))
-                self.clients[fro.full].disconnect()
-            else:
-                self.clients[fro.full].need_disconnect = True
+                cl.disconnect()
         elif fro.full in self.clients and \
              (presenceType in ("available", "", None)):
             if self.clients[fro.full].connected:
@@ -446,6 +448,7 @@ class J2JComponent(ComponentXMPP):
             if jid == bare_jid or jid.startswith(bare_jid + "/"):
                 cl = self.clients[jid]
                 if cl.connected:
+                    cl.need_disconnect = True
                     cl.disconnect()
 
     def connectGuestSession(self, fro, uid, el):
@@ -1089,6 +1092,7 @@ class J2JComponent(ComponentXMPP):
                 self.offlineUser(uid, fro, remove=True)
         for cl in sessions:
             if cl.connected:
+                cl.need_disconnect = True
                 cl.disconnect()
         if uid:
             self.db.execute(

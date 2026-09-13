@@ -25,7 +25,7 @@
 |------|------|
 | `main.py` | Точка входа, CLI, daemonize, PID-файл, сигналы, версия |
 | `j2j.py` | `J2JComponent` (XEP-0114): маршрутизация, регистрация, disco/vCard/gateway, оффлайн-учёт |
-| `client.py` | `GuestClient` (C2S-сессия): carbons, импорт/удаление ростера, `route()` |
+| `client.py` | `GuestClient` (C2S-сессия): carbons, XEP-0198 resumption, импорт/удаление ростера, `route()` |
 | `utils.py` | helper: экранирование JID, retag, X-Data формы, `errorCodeMap`, xmlns-константы |
 | `database.py` | SQLite-доступ, миграции, шифрование паролей (`Database`) |
 | `dbCrypto.py` | Fernet-шифрование паролей гостей (`dbCrypto`) |
@@ -233,6 +233,9 @@ value, section='general')`): `setDefaultLanguage(lang)`, `setImportMode(mode)`,
 ## 5. Гостевой клиент (`client.py`, `GuestClient(ClientXMPP)`)
 
 `PING_INTERVAL = 60`.
+XEP-0198 resumption: `RESUME_BASE_DELAY = 10`, `RESUME_MAX_DELAY = 60`,
+`RESUME_MAX_ATTEMPTS = 6` (окно ретраев после внезапной потери гостевого
+потока; подробнее — 5.5, 5.6).
 
 ### 5.1 `__init__(self, uid, el, component, host_jid, client_jid, server, secret, port=5222, import_roster=False, remove_from_roster=False, import_group=None, test_mode=False)`
 - `ClientXMPP.__init__(self, client_jid.full, secret)`.
@@ -244,14 +247,21 @@ value, section='general')`): `setDefaultLanguage(lang)`, `setImportMode(mode)`,
   `client_jid`, `need_disconnect=False`, `error=None`, `secret`,
   `presenceSent=False`, `startPresence=el`, `ping_obj=None`,
   `carbons_enabled=False`, `default_domain=server`, `default_port=port`.
+- XEP-0198: `sm_enabled=False` (текущий поток договорился о stream management),
+  `resuming=False` (идёт окно ретраев), `resume_attempts=0`,
+  `resume_timer=None` (handle `loop.call_later`), `_resume_connect_args` —
+  точные аргументы `connect(addr, port)` для переподключения к тому же
+  эндпоинту (при `test_mode` — `(None, None)`).
 - Slixmpp настройки: `auto_authorize=None`, `auto_subscribe=False`
   (своё управление подписками), `enable_direct_tls=False`,
   `enable_plaintext=True` (legacy plaintext/STARTTLS).
-- `register_plugin('xep_0280')` (carbons).
+- `register_plugin('xep_0280')` (carbons) и `register_plugin('xep_0198')`
+  (stream management).
 - Обработчики событий: `session_start→onSessionStart`, `presence→onPresence`,
   `roster_update→onRosterResult`, `disconnected→onDisconnected`,
-  `connection_failed→onConnectFailed`; Callback `GuestMessage`/`GuestIq` →
-  `onMessage`/`onIq`.
+  `connection_failed→onConnectFailed`; `sm_enabled→_onSmEnabled`,
+  `session_resumed→_onSessionResumed`, `sm_failed→_onSmFailed`;
+  Callback `GuestMessage`/`GuestIq` → `onMessage`/`onIq`.
 - Лог `loginsLog("User %s is connecting to %s:%s with guest-jid %s")`.
 - Подключение: если не `test_mode` — резолв IPv4 (`socket.getaddrinfo` с
   `AF_INET`), при получении адреса `self.connect(addr, int(port))`, иначе
@@ -263,26 +273,67 @@ value, section='general')`): `setDefaultLanguage(lang)`, `setImportMode(mode)`,
   с учётом `DEBUG_CLXMLACL`.
 
 ### 5.3 `onSessionStart(event)`
-- При неудаче (`if not self.authenticated` варианты) — `disconnect()`.
+- При `need_disconnect` — `disconnect()` и выход (намеренный разрыв).
 - **TCP keepalive**: если `transport.socket` — `utils.enableTcpKeepalive(sock)`
   (NAT-таймауты, мёртвые хосты без FIN/RST).
 - Если `startPresence` — replay (retag в `CLIENT_NS`).
 - `self.get_roster()` и `self._enableCarbons()`.
-- `authenticated=True; connected=True`. Запуск `ping` (PING_INTERVAL).
+- В конце — `_finishResumeRecovery()` (снимает окно ретраев, если
+  подключались после обрыва, и запускает keepalive).
+- `authenticated=True; connected=True`.
 
 ### 5.4 `ping()`
-- Если `transport` и циркулирует — `send_presence(pto=self.host_jid.full,
-  pstatus='', pfrom=self.client_jid.full)` (0-length keepalive); исключения
-  глушатся; планирует следующий ping.
+- Идемпотентен: гасит предыдущий `ping_obj`, если тот жив.
+- Отправляет whitespace-keepalive `self.send_raw(b' ')`; исключения глушатся.
+- Если не `need_disconnect` — планирует следующий ping через PING_INTERVAL.
 
 ### 5.5 `onConnectFailed(event)` / `onDisconnected(event)`
-- Лог, `self.error`, `self.connected=False`, отмена ping.
-- `onDisconnected` (не при ошибке): **эвакуация оффлайна** — через
-  `component.offlineUser(uid, self.host_jid, client=self, remove=False)`
-  (покрывает все контакты из `db.rosters`); затем `component.deleteClient(self.host_jid)`.
-- `need_disconnect` логика для suspend/disable.
+- Общее: лог, отмена ping (в `onDisconnected`).
+- `onConnectFailed` при `resuming`: обычная логика ошибки пропускается —
+  `cancel_connection_attempt()`, затем `_scheduleResumeAttempt()` (backoff
+  ведёт сам клиент; slixmpp-перепланирование не используется).
+- Иначе (первичное подключение): `cancel_connection_attempt()`, `sendError(
+  startPresence, "cancel", "remote-server-not-found")`,
+  `component.deleteClient(self.host_jid)`.
+- `onDisconnected`:
+  - `need_disconnect` (лог-аут, suspend, удаление аккаунта) → `_teardown()`
+    сразу;
+  - `resuming` (обрыв собственной попытки переподключения до переговоров
+    фич) → `_scheduleResumeAttempt()` (если таймер ещё не стоит);
+  - `not sm_enabled` (сервер не дал stream management) → legacy-поведение:
+    `_teardown()` немедленно (виртуальные контакты оффлайн);
+  - иначе — `_enterResume()`.
 
-### 5.6 `onRosterResult(iq)` — синхронизация ростера
+### 5.6 XEP-0198 resumption (guest-side)
+- `_onSmEnabled(event)`: `sm_enabled=True`, debug-лог.
+- `_onSmFailed(event)`: `sm_enabled=False`.
+- `_onSessionResumed(event)`: info-лог, `_finishResumeRecovery()`.
+- `_enterResume()`: если `need_disconnect` или `component.shuttingDown` —
+  `_teardown()`; иначе `resuming=True`, `resume_attempts=0`, info-лог,
+  `_scheduleResumeAttempt()`. Контакты хоста остаются онлайн, станзы,
+  адресованные гостю, буферизуются slixmpp (`__queued_stanzas`) до
+  восстановления потока.
+- `_scheduleResumeAttempt()`: если таймер уже стоит — выход; при
+  `need_disconnect`/shutdown — `_teardown()`; задержка `min(RESUME_BASE_DELAY *
+  (resume_attempts or 1), RESUME_MAX_DELAY)`; `resume_timer = loop.call_later(...)`.
+- `_doResumeAttempt()`: `resume_timer=None`; при `need_disconnect`/shutdown —
+  `_teardown()`; `resume_attempts += 1`; если `> RESUME_MAX_ATTEMPTS` —
+  info-лог и `_teardown()` (виртуальные контакты оффлайн). Иначе
+  `_connect_loop_wait = 0` и `self.connect(*_resume_connect_args)`;
+  исключение `connect()` → `_scheduleResumeAttempt()`.
+- `_finishResumeRecovery()`: гасит `resume_timer`; `resuming=False`,
+  `resume_attempts=0`; `authenticated=True; connected=True`; при выходе из
+  окна — info-лог; `ping()` (перезапуск keepalive).
+- `_teardown()`: финальный снос сессии — гасит resumption, отменяет текущую
+  попытку подключения, `component.offlineUser(uid, self.host_jid, client=self,
+  remove=False)` (покрытие контактов из `db.rosters`) и
+  `component.deleteClient(self.host_jid)`.
+- Сторона компонента: перед намеренными `cl.disconnect()` в `onPresence`
+  (ветка unavailable), `disconnectGuestSessions` (suspend) и `deleteAccount`
+  ставится `cl.need_disconnect = True` — чтобы `onDisconnected` не включил
+  окно ретраев за спиной пользователя.
+
+### 5.7 `onRosterResult(iq)` — синхронизация ростера
 - `guest_roster.updateFromClientRoster()`.
 - Если `not presenceSent` — слать available-презенс хосту с pfrom=`cJid`,
   pstatus=`i18n.t(lang,'status_online') % client_jid.bare`; `presenceSent=True`.
@@ -301,13 +352,13 @@ value, section='general')`): `setDefaultLanguage(lang)`, `setImportMode(mode)`,
   - Запись импортированных в `db.rosters` (без дублей), `db.commit()`.
 - Логика «каждый логин предлагать все» vs «только новые» — опция rostersync.
 
-### 5.7 Импорт/удаление ростера
+### 5.8 Импорт/удаление ростера
 - `_importViaSubscriptions(missing)`: subscribe-презенсы по одному.
 - `_importViaRosterExchange(missing)`: единый XEP-0144, jid = `quoteJID(jid)`,
   группа `import_group or config.ROSTER_GROUP_NAME`.
 - `_removeViaRosterExchange(removed)`: XEP-0144 «delete» (см. `build_roster_exchange_removal`).
 
-### 5.8 Carbons (XEP-0280)
+### 5.9 Carbons (XEP-0280)
 - `_enableCarbons()`: `self['xep_0280'].enable(timeout=15)`; по завершении
   future — `carbons_enabled=True` или debug-лог.
 - `_carbonChild(el)`: возвращает `(direction, inner)` — ищет `{CARBONS_NS}sent`
@@ -323,7 +374,7 @@ value, section='general')`): `setDefaultLanguage(lang)`, `setImportMode(mode)`,
   `<message type=chat from=host_jid.bare to=quoteJID(tjid.full)>` + `<body>`;
   `component.send(tostring(wrap))`.
 
-### 5.9 `onPresence(pres)`
+### 5.10 `onPresence(pres)`
 - `fro = pres['from']` в `try/except InvalidJID` (сбой → return).
 - `presType = pres['type']`; пустой `fro` → return.
 - Определяет uid по `host_jid`; проверки гейта «только контакты гостевого
@@ -333,12 +384,12 @@ value, section='general')`): `setDefaultLanguage(lang)`, `setImportMode(mode)`,
   `notePresenceWithdrawn`.
 - `self.route(pres)`.
 
-### 5.10 `onIq(el)`
+### 5.11 `onIq(el)`
 - Маршрутизация ответов компоненту; для disco#info result — подстановка
   vcard-temp feature если отсутствует (проксиvCard); для gateway —
   подстановка `jid`; `RETAG` в компонентный ns; `route`.
 
-### 5.11 `route(el)` (гость → хост)
+### 5.12 `route(el)` (гость → хост)
 Полный алгоритм:
 1. `fro = JID(el['from'])` и `to = el['to']` читаются **внутри** `try/except
    InvalidJID` (само чтение `el['from']` может кидать InvalidJID); сбой → return
@@ -693,7 +744,9 @@ fro, remove=True)` без сессий), `cl.disconnect()`; DELETE `rosters`,
    `AGENTS.md` (правила работы) и `SPEC.md` (данный документ) в том же
    изменении — схема, сигнатуры, константы, конфиг-атрибуты и поведение
    должны оставаться актуальными, чтобы проект можно было воссоздать по
-   спецификации в точности.
+   спецификации в точности. Список поддерживаемых стандартов — `XEPs.md`;
+   при изменении поддержки XEP (добавление/удаление/смена поведения)
+   обновлять его в том же изменении.
 
 ---
 
@@ -708,7 +761,10 @@ fro, remove=True)` без сессий), `cl.disconnect()`; DELETE `rosters`,
       `offlineUser`, liveness/self-ping.
 - [ ] `client.py`: `__init__`, `onSessionStart` (keepalive+carbons+roster),
       `onPresence`, `onMessage`/carbons, `onIq`, `onRosterResult` (sync/remove/
-      import), `route` (все гейты), `sendError`.
+      import), `route` (все гейты), `sendError`, XEP-0198 resumption
+      (`_enterResume`/`_scheduleResumeAttempt`/`_doResumeAttempt`/
+      `_finishResumeRecovery`/`_teardown`, флаги `sm_enabled`/`resuming`,
+      `need_disconnect` перед намеренными разрывами в `j2j.py`).
 - [ ] `utils.py`: quote/unquote (обе схемы), retag, ns, addsub, xdata, stats,
       `errorCodeMap`, keepalive, strip_relay_features.
 - [ ] `database.py`: схема + миграции + crypto-инициализация + API.

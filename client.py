@@ -85,6 +85,13 @@ def _carbonChild(el):
 
 class GuestClient(ClientXMPP):
     PING_INTERVAL = 60
+    # XEP-0198 resumption window: on an unexpected guest stream loss we
+    # keep the host-side contacts online and reconnect up to
+    # RESUME_MAX_ATTEMPTS times, waiting RESUME_BASE_DELAY seconds after
+    # the first drop and growing arithmetically up to RESUME_MAX_DELAY.
+    RESUME_BASE_DELAY = 10
+    RESUME_MAX_DELAY = 60
+    RESUME_MAX_ATTEMPTS = 6
 
     def __init__(self, uid, el, component, host_jid, client_jid,
                  server, secret, port=5222, import_roster=False,
@@ -124,6 +131,16 @@ class GuestClient(ClientXMPP):
         self.ping_obj = None
         # XEP-0280: set once the remote server confirms <enable/>.
         self.carbons_enabled = False
+        # XEP-0198: set once the current stream negotiated stream
+        # management with the guest server (the precondition for
+        # resumption). Cleared on sm_failed and never trusted during the
+        # resumption window itself.
+        self.sm_enabled = False
+        # True while the guest stream is down and we are trying to resume
+        # it (contacts stay online at the host until we give up).
+        self.resuming = False
+        self.resume_attempts = 0
+        self.resume_timer = None
 
         self.default_domain = server
         self.default_port = port
@@ -141,12 +158,16 @@ class GuestClient(ClientXMPP):
         self.enable_plaintext = True
 
         self.register_plugin('xep_0280')
+        self.register_plugin('xep_0198')
 
         self.add_event_handler('session_start', self.onSessionStart)
         self.add_event_handler('presence', self.onPresence)
         self.add_event_handler('roster_update', self.onRosterResult)
         self.add_event_handler('disconnected', self.onDisconnected)
         self.add_event_handler('connection_failed', self.onConnectFailed)
+        self.add_event_handler('sm_enabled', self._onSmEnabled)
+        self.add_event_handler('session_resumed', self._onSessionResumed)
+        self.add_event_handler('sm_failed', self._onSmFailed)
         self.register_handler(
             Callback('GuestMessage', StanzaPath('message'), self.onMessage))
         self.register_handler(
@@ -168,10 +189,15 @@ class GuestClient(ClientXMPP):
                     addr = infos[0][4][0]
             except Exception:
                 addr = None
+            # Remember the exact connect arguments so the XEP-0198
+            # resumption retry reconnects to the same endpoint.
+            self._resume_connect_args = (addr, int(port))
             if addr:
                 self.connect(addr, int(port))
             else:
                 self.connect()
+        else:
+            self._resume_connect_args = (None, None)
 
     # ---- XML debug logging ----
 
@@ -209,11 +235,15 @@ class GuestClient(ClientXMPP):
         self.get_roster()
         self._enableCarbons()
 
-        self.authenticated = True
-        self.connected = True
-        self.ping()
+        self._finishResumeRecovery()
 
     def ping(self):
+        if self.ping_obj is not None:
+            try:
+                self.ping_obj.cancel()
+            except Exception:
+                pass
+            self.ping_obj = None
         try:
             self.send_raw(b' ')
         except Exception:
@@ -223,6 +253,15 @@ class GuestClient(ClientXMPP):
                                                  self.ping)
 
     def onConnectFailed(self, event):
+        if self.resuming:
+            # A retry attempt failed: stop slixmpp's own rescheduling (we
+            # drive the backoff ourselves) and schedule the next retry.
+            self.component.debug.logger.debug(
+                "Guest stream reconnect failed for %s: %s",
+                self.host_jid.full, event)
+            self.cancel_connection_attempt()
+            self._scheduleResumeAttempt()
+            return
         self.component.debug.loginErrorLog(
             "User %s has error in connection:\n%s" %
             (self.host_jid.full, str(event)))
@@ -239,11 +278,133 @@ class GuestClient(ClientXMPP):
             except Exception:
                 pass
             self.ping_obj = None
+        if self.need_disconnect:
+            # The user logged out, the account was suspended or deleted:
+            # never reconnect behind their back.
+            self._teardown()
+            return
+        if self.resuming:
+            # A drop while retrying (the attempt's own connection died
+            # before feature negotiation): push the next retry unless one
+            # is already pending.
+            if self.resume_timer is None:
+                self._scheduleResumeAttempt()
+            return
+        if not self.sm_enabled:
+            # The guest server never granted stream management, so there is
+            # nothing to resume: legacy behaviour (immediate offline).
+            self._teardown()
+            return
+        self._enterResume()
+
+    # ---- XEP-0198 stream resumption ----
+
+    def _onSmEnabled(self, event):
+        self.sm_enabled = True
+        self.component.debug.logger.debug(
+            "XEP-0198 enabled for guest stream of %s", self.host_jid.full)
+
+    def _onSmFailed(self, event):
+        self.sm_enabled = False
+
+    def _onSessionResumed(self, event):
+        self.component.debug.logger.info(
+            "Guest stream resumed via XEP-0198 for %s", self.host_jid.full)
+        self._finishResumeRecovery()
+
+    def _enterResume(self):
+        """Start a bounded retry window after an unexpected guest stream
+        loss. Contacts stay online at the host and stanzas addressed to the
+        guest are buffered by slixmpp until the stream is restored or the
+        window expires."""
+        if self.need_disconnect or self.component.shuttingDown:
+            self._teardown()
+            return
+        self.resuming = True
+        self.resume_attempts = 0
+        self.component.debug.logger.info(
+            "Guest stream for %s lost; keeping host-side contacts online and "
+            "retrying the connection (XEP-0198 resumption)",
+            self.host_jid.full)
+        self._scheduleResumeAttempt()
+
+    def _scheduleResumeAttempt(self):
+        if self.resume_timer is not None:
+            return
+        if self.need_disconnect or self.component.shuttingDown:
+            self._teardown()
+            return
+        delay = min(self.RESUME_BASE_DELAY * (self.resume_attempts or 1),
+                    self.RESUME_MAX_DELAY)
+        self.resume_timer = self.loop.call_later(delay,
+                                                 self._doResumeAttempt)
+
+    def _doResumeAttempt(self):
+        self.resume_timer = None
+        if self.need_disconnect or self.component.shuttingDown:
+            self._teardown()
+            return
+        self.resume_attempts += 1
+        if self.resume_attempts > self.RESUME_MAX_ATTEMPTS:
+            self.component.debug.logger.info(
+                "Giving up reconnecting the guest stream of %s after %d "
+                "attempts; taking virtual contacts offline",
+                self.host_jid.full, self.resume_attempts - 1)
+            self._teardown()
+            return
+        self.component.debug.logger.info(
+            "Reconnect attempt %d/%d for the guest stream of %s",
+            self.resume_attempts, self.RESUME_MAX_ATTEMPTS,
+            self.host_jid.full)
+        try:
+            self._connect_loop_wait = 0
+            self.connect(*self._resume_connect_args)
+        except Exception as exc:
+            self.component.debug.logger.debug(
+                "connect() raised during resumption for %s: %s",
+                self.host_jid.full, exc)
+            self._scheduleResumeAttempt()
+
+    def _finishResumeRecovery(self):
+        """Called when the guest stream is back (either resumed via
+        XEP-0198 or re-established from scratch). Restores the connected
+        state, restarts the whitespace keepalive and ends the retry
+        window."""
+        if self.resume_timer is not None:
+            try:
+                self.resume_timer.cancel()
+            except Exception:
+                pass
+            self.resume_timer = None
+        recovering = self.resuming
+        self.resuming = False
+        self.resume_attempts = 0
+        self.authenticated = True
+        self.connected = True
+        if recovering:
+            self.component.debug.logger.info(
+                "Guest stream recovered for %s", self.host_jid.full)
+        self.ping()
+
+    def _teardown(self):
+        """Final teardown of a guest session: cancel any pending
+        resumption, take every virtual contact (and the transport itself)
+        offline at the host via db.rosters coverage, and drop the session
+        from self.clients."""
+        self.resuming = False
+        self.resume_attempts = 0
+        if self.resume_timer is not None:
+            try:
+                self.resume_timer.cancel()
+            except Exception:
+                pass
+            self.resume_timer = None
+        try:
+            self.cancel_connection_attempt()
+        except Exception:
+            pass
         uid = self.component.db.getIdByJid(self.host_jid.bare)
         if uid:
-            # Take every virtual contact (and the transport itself) offline
-            # for the host. Uses db.rosters so all imported contacts are
-            # covered, not just those with a cached presence.
             self.component.offlineUser(
                 uid, self.host_jid, client=self, remove=False)
         self.component.deleteClient(self.host_jid)

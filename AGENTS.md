@@ -56,6 +56,11 @@ J2J — это транспорт для XMPP (XEP-0114, `jabber:component:accep
 
 - **Карбонсы** (XEP-0280, `client.py`): гостевая сессия включает carbons; исходящие
   сообщения с других клиентов зеркалятся хосту, входящие копии отбрасываются.
+- **Stream Management** (XEP-0198, `client.py`): при внезапном обрыве гостевого
+  потока контакты хоста остаются онлайн, клиент переподключается и возобновляет
+  поток (окно `RESUME_BASE_DELAY..RESUME_MAX_DELAY`, до `RESUME_MAX_ATTEMPTS`);
+  намеренные разрывы (off/suspend/удаление) помечаются `need_disconnect` в
+  `j2j.py` и закрывают сессию сразу.
 - **Импорт/синхронизация ростера** (`client.py` + `roster.py`): режимы off/subscribe/
   rosterx/auto, зеркалирование `db.rosters`, удаление исчезнувших контактов
   (unsubscribe-пары или XEP-0144 delete), приоритет `virtual_contacts`.
@@ -101,7 +106,9 @@ J2J — это транспорт для XMPP (XEP-0114, `jabber:component:accep
   `SPEC.md`, а также схема/сигнатуры/константы/поведение в коде) обновлять
   `AGENTS.md` и `SPEC.md` в том же изменении, чтобы они оставались актуальными.
   `AGENTS.md` описывает правила работы, `SPEC.md` — техническую спецификацию
-  для воссоздания проекта с нуля.
+  для воссоздания проекта с нуля. Список поддерживаемых стандартов — `XEPs.md`;
+  при изменении поведения, добавлении или удалении поддержки XEP обновлять
+  `XEPs.md` в том же изменении.
 - Не трогать посторонние незакоммиченные правки без согласования; коммитить только
   по явному запросу.
 
@@ -121,3 +128,17 @@ J2J — это транспорт для XMPP (XEP-0114, `jabber:component:accep
 | `roster.py` | сборка/разбор roster и roster-item-exchange | импорт ростера |
 | `config.py` | конфиг (INI-секции) | новые опции |
 | `debug.py` | логирование | уровни/дампы |
+| `XEPs.md` | список поддерживаемых XEP с ролью в транспорте | при изменении поддержки стандартов |
+
+<!-- CODE_BRAIN_MANDATORY -->
+## Code Brain MCP - Mandatory when loaded
+
+Use Code Brain MCP first for substantive tasks in this project.
+
+- Start with `start_task(runIntake=true)` or `neural_sync`.
+- Use `agent_plan` before `agent_code` for chunk and deep work.
+- Use `memory_retrieve` at intake and `memory_store` at task end.
+- Use `uncertainty_guard` before storing conclusions.
+- Disable duplicate MCPs with `get_superseded_mcps`.
+<!-- CODE_BRAIN_MANDATORY -->
+
